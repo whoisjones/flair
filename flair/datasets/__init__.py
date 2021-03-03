@@ -80,6 +80,7 @@ from .document_classification import WASSA_FEAR
 from .document_classification import WASSA_JOY
 from .document_classification import WASSA_SADNESS
 from .document_classification import GO_EMOTIONS
+from .document_classification import GERMEVAL_2018_OFFENSIVE_LANGUAGE
 
 # Expose all treebanks
 from .treebanks import UniversalDependenciesCorpus
@@ -130,6 +131,10 @@ from .treebanks import UD_WOLOF
 from .text_text import ParallelTextCorpus
 from .text_text import ParallelTextDataset
 from .text_text import OpusParallelCorpus
+from .text_text import DataPairDataset
+from .text_text import DataPairCorpus
+from .text_text import GLUE_RTE
+from .text_text import SUPERGLUE_RTE
 
 # Expose all text-image datasets
 from .text_image import FeideggerCorpus
