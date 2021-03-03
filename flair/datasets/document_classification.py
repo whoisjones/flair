@@ -321,6 +321,7 @@ class CSVClassificationCorpus(Corpus):
             skip_header: bool = False,
             encoding: str = 'utf-8',
             no_class_label=None,
+            label_name_map: dict = None,
             **fmtparams,
     ):
         """
@@ -357,6 +358,7 @@ class CSVClassificationCorpus(Corpus):
             skip_header=skip_header,
             encoding=encoding,
             no_class_label=no_class_label,
+            label_name_map=label_name_map,
             **fmtparams,
         )
 
@@ -371,6 +373,7 @@ class CSVClassificationCorpus(Corpus):
             skip_header=skip_header,
             encoding=encoding,
             no_class_label=no_class_label,
+            label_name_map=label_name_map,
             **fmtparams,
         ) if test_file is not None else None
 
@@ -385,6 +388,7 @@ class CSVClassificationCorpus(Corpus):
             skip_header=skip_header,
             encoding=encoding,
             no_class_label=no_class_label,
+            label_name_map=label_name_map,
             **fmtparams,
         ) if dev_file is not None else None
 
@@ -410,6 +414,7 @@ class CSVClassificationDataset(FlairDataset):
             skip_header: bool = False,
             encoding: str = 'utf-8',
             no_class_label=None,
+            label_name_map: dict = None,
             **fmtparams,
     ):
         """
@@ -443,6 +448,11 @@ class CSVClassificationDataset(FlairDataset):
         self.no_class_label = no_class_label
 
         self.label_type = label_type
+        self.label_name_map = label_name_map
+        if label_name_map:
+            for column in column_name_map:
+                if column_name_map[column] == "label":
+                    label_column_id = column
 
         # different handling of in_memory data than streaming data
         if self.in_memory:
@@ -504,6 +514,8 @@ class CSVClassificationDataset(FlairDataset):
                                 and column_value
                         ):
                             if column_value != self.no_class_label:
+                                if self.label_name_map:
+                                    column_value = self.label_name_map.get(column_value)
                                 sentence.add_label(label_type, column_value)
 
                     if 0 < self.max_tokens_per_doc < len(sentence):
@@ -511,6 +523,8 @@ class CSVClassificationDataset(FlairDataset):
                     self.sentences.append(sentence)
 
                 else:
+                    if self.label_name_map:
+                        row[label_column_id] = self.label_name_map[row[label_column_id]]
                     self.raw_data.append(row)
 
                 self.total_sentence_count += 1
@@ -1538,89 +1552,6 @@ class TREC_6(ClassificationCorpus):
 
         super(TREC_6, self).__init__(
             data_folder, label_type='question_type', tokenizer=tokenizer, memory_mode=memory_mode, **corpusargs,
-        )
-
-
-class GERMEVAL_2018_OFFENSIVE_LANGUAGE(ClassificationCorpus):
-    """
-    GermEval 2018 corpus for identification of offensive language.
-    Classifying German tweets into 2 coarse-grained categories OFFENSIVE and OTHER
-    or 4 fine-grained categories ABUSE, INSULT, PROFATINTY and OTHER.
-    """
-
-    def __init__(self,
-                 base_path: Union[str, Path] = None,
-                 tokenizer: Union[bool, Callable[[str], List[Token]], Tokenizer] = SegtokTokenizer(),
-                 memory_mode: str = 'full',
-                 fine_grained_classes: bool = False,
-                 **corpusargs):
-        """
-        Instantiates GermEval 2018 Offensive Language Classification Corpus.
-        :param base_path: Provide this only if you store the Offensive Language corpus in a specific folder, otherwise use default.
-        :param tokenizer: Custom tokenizer to use (default is SegtokTokenizer)
-        :param memory_mode: Set to 'full' by default since this is a small corpus. Can also be 'partial' or 'none'.
-        :param fine_grained_classes: Set to True to load the dataset with 4 fine-grained classes
-        :param corpusargs: Other args for ClassificationCorpus.
-        """
-
-        if type(base_path) == str:
-            base_path: Path = Path(base_path)
-
-        # this dataset name
-        dataset_name = self.__class__.__name__.lower()
-
-        # default dataset folder is the cache root
-        if not base_path:
-            base_path = Path(flair.cache_root) / "datasets"
-        data_folder = base_path / dataset_name
-
-        # download data if necessary
-        offlang_path = "https://raw.githubusercontent.com/uds-lsv/GermEval-2018-Data/master/"
-
-        original_filenames = ["germeval2018.training.txt", "germeval2018.test.txt"]
-        new_filenames = ["train.txt", "test.txt"]
-        for original_filename in original_filenames:
-            cached_path(
-                f"{offlang_path}{original_filename}",
-                Path("datasets") / dataset_name / "original",
-            )
-        
-        task_setting = "coarse_grained"
-        if fine_grained_classes:
-            task_setting = "fine_grained"
-
-        task_folder = data_folder / task_setting
-        data_file = task_folder / new_filenames[0]
-
-        # create a separate directory for different tasks
-        if not os.path.exists(task_folder):
-            os.makedirs(task_folder)
-
-        if not data_file.is_file():
-            for original_filename, new_filename in zip(
-                    original_filenames, new_filenames
-            ):
-                with open(
-                        data_folder / "original" / original_filename,
-                        "rt",
-                        encoding="utf-8",
-                ) as open_fp:
-                    with open(
-                            data_folder / task_setting / new_filename, "wt", encoding="utf-8"
-                    ) as write_fp:
-                        for line in open_fp:
-                            line = line.rstrip()
-                            fields = line.split('\t')
-                            tweet = fields[0]
-                            if task_setting == "fine_grained":
-                                old_label = fields[2]
-                            else: 
-                                old_label = fields[1]
-                            new_label = '__label__' + old_label
-                            write_fp.write(f"{new_label} {tweet}\n")
-
-        super(GERMEVAL_2018_OFFENSIVE_LANGUAGE, self).__init__(
-            data_folder=task_folder, tokenizer=tokenizer, memory_mode=memory_mode, **corpusargs,
         )
 
 
