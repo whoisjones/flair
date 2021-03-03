@@ -295,7 +295,10 @@ class SequenceTaggerTask(flair.nn.Model):
         features, lengths = self.forward(sentences)
 
         # features und lengths in der forward sortiert
-        tags = self.viterbi_decoder.decode(features, lengths)
+        if self.use_crf:
+            tags = self.viterbi_decoder.decode(features, lengths)
+        else:
+            tags = self.decode_labels(features, lengths)
 
         # sorted sentences to match tags from decoder
         sentences = [sentences[i] for i in lengths.indices]
@@ -310,6 +313,12 @@ class SequenceTaggerTask(flair.nn.Model):
 
         if return_loss:
             return self.loss(features, sentences, lengths)
+
+    def decode_labels(self, features):
+        confidences = torch.nn.functional.softmax(features, dim=0)
+        conf, idx = torch.max(confidences, 0)
+        label = self.label_dictionary.get_item_for_index(idx.item())
+        return
 
     def calculate_metric(self, sentences: Union[List[Sentence], Sentence], out_path: Union[str, Path] = None):
         """
