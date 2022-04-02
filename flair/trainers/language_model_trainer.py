@@ -5,6 +5,7 @@ import random
 import sys
 import time
 from pathlib import Path
+from tabnanny import check
 from typing import Iterable, Type, Union
 
 import torch
@@ -159,7 +160,6 @@ class LanguageModelTrainer(LightningLite):
         corpus: TextCorpus,
         optimizer: Type[Optimizer] = SGD,
         test_mode: bool = False,
-        
         split: int = 0,
         loss: float = 10000,
         optimizer_state: dict = None,
@@ -174,6 +174,38 @@ class LanguageModelTrainer(LightningLite):
         self.split = split
         self.loss = loss
         self.optimizer_state = optimizer_state
+
+    def train(
+        self,
+        base_path: Union[Path, str],
+        sequence_length: int,
+        learning_rate: float = 20,
+        mini_batch_size: int = 100,
+        anneal_factor: float = 0.25,
+        patience: int = 10,
+        clip=0.25,
+        initial_epoch: int = 0,
+        max_epochs: int = 1000,
+        checkpoint: bool = False,
+        grow_to_sequence_length: int = 0,
+        num_workers: int = 2,
+        **kwargs,
+    ):
+        self.run(
+            base_path=base_path,
+            sequence_length=sequence_length,
+            learning_rate=learning_rate,
+            mini_batch_size=mini_batch_size,
+            anneal_factor=anneal_factor,
+            patience=patience,
+            clip=clip,
+            initial_epoch=initial_epoch,
+            max_epochs=max_epochs,
+            checkpoint=checkpoint,
+            grow_to_sequence_length=grow_to_sequence_length,
+            num_workers=num_workers,
+            **kwargs
+        )
 
     def run(
         self,
@@ -388,7 +420,6 @@ class LanguageModelTrainer(LightningLite):
 
         log.info(summary)
         log.info("-" * 89)
-
 
     def evaluate(self, data_source, eval_batch_size, sequence_length):
         # Turn on evaluation mode which disables dropout.
