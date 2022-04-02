@@ -8,22 +8,17 @@ from pathlib import Path
 from typing import Iterable, Type, Union
 
 import torch
+from pytorch_lightning.lite import LightningLite
 from torch import cuda
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.sgd import SGD
 from torch.utils.data import DataLoader, Dataset
 
-from flair.optim import SGDW, ReduceLRWDOnPlateau
-
-try:
-    from apex import amp
-except ImportError:
-    amp = None
-
 import flair
 from flair.data import Dictionary
 from flair.models import LanguageModel
+from flair.optim import SGDW, ReduceLRWDOnPlateau
 from flair.training_utils import add_file_handler
 
 log = logging.getLogger("flair")
@@ -157,14 +152,14 @@ class TextCorpus(object):
         )[0]
 
 
-class LanguageModelTrainer:
+class LanguageModelTrainer(LightningLite):
     def __init__(
         self,
         model: LanguageModel,
         corpus: TextCorpus,
         optimizer: Type[Optimizer] = SGD,
         test_mode: bool = False,
-        epoch: int = 0,
+        
         split: int = 0,
         loss: float = 10000,
         optimizer_state: dict = None,
@@ -176,12 +171,11 @@ class LanguageModelTrainer:
 
         self.loss_function = torch.nn.CrossEntropyLoss()
         self.log_interval = 100
-        self.epoch = epoch
         self.split = split
         self.loss = loss
         self.optimizer_state = optimizer_state
 
-    def train(
+    def run(
         self,
         base_path: Union[Path, str],
         sequence_length: int,
@@ -190,25 +184,13 @@ class LanguageModelTrainer:
         anneal_factor: float = 0.25,
         patience: int = 10,
         clip=0.25,
+        initial_epoch: int = 0,
         max_epochs: int = 1000,
         checkpoint: bool = False,
         grow_to_sequence_length: int = 0,
         num_workers: int = 2,
-        use_amp: bool = False,
-        amp_opt_level: str = "O1",
         **kwargs,
     ):
-
-        if use_amp:
-            if sys.version_info < (3, 0):
-                raise RuntimeError("Apex currently only supports Python 3. Aborting.")
-            if amp is None:
-                raise RuntimeError(
-                    "Failed to import apex. Please install apex from "
-                    "https://www.github.com/nvidia/apex "
-                    "to enable mixed-precision training."
-                )
-
         # cast string to Path
         base_path = Path(base_path)
 
@@ -244,17 +226,18 @@ class LanguageModelTrainer:
             else:
                 scheduler = ReduceLROnPlateau(optimizer, verbose=True, factor=anneal_factor, patience=patience)
 
-            if use_amp:
-                self.model, optimizer = amp.initialize(self.model, optimizer, opt_level=amp_opt_level)
+            self.model, optimizer = self.setup(self.model, optimizer)
 
             training_generator = DataLoader(self.corpus.train, shuffle=False, num_workers=num_workers)
+            training_generator = self.setup_dataloaders(training_generator)
 
-            for epoch in range(self.epoch, max_epochs):
+            for epoch in range(initial_epoch, max_epochs):
                 epoch_start_time = time.time()
                 # Shuffle training files randomly after serially iterating
                 # through corpus one
                 if epoch > 0:
                     training_generator = DataLoader(self.corpus.train, shuffle=True, num_workers=num_workers)
+                    training_generator = self.setup_dataloaders(training_generator)
                     self.model.save_checkpoint(
                         base_path / f"epoch_{epoch}.pt",
                         optimizer,
@@ -309,11 +292,7 @@ class LanguageModelTrainer:
                         # try to predict the targets
                         loss = self.loss_function(output.view(-1, ntokens), targets)
                         # Backward
-                        if use_amp:
-                            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                                scaled_loss.backward()
-                        else:
-                            loss.backward()
+                        self.backward(loss)
 
                         # `clip_grad_norm` helps prevent the exploding gradient
                         # problem in RNNs / LSTMs.
@@ -409,6 +388,7 @@ class LanguageModelTrainer:
 
         log.info(summary)
         log.info("-" * 89)
+
 
     def evaluate(self, data_source, eval_batch_size, sequence_length):
         # Turn on evaluation mode which disables dropout.
