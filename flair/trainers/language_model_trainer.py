@@ -154,31 +154,18 @@ class TextCorpus(object):
 
 
 class LanguageModelTrainer(LightningLite):
-    def __init__(
+
+    def train(
         self,
         model: LanguageModel,
         corpus: TextCorpus,
+        base_path: Union[Path, str],
+        sequence_length: int,
         optimizer: Type[Optimizer] = SGD,
         test_mode: bool = False,
         split: int = 0,
         loss: float = 10000,
         optimizer_state: dict = None,
-    ):
-        self.model: LanguageModel = model
-        self.optimizer: Type[Optimizer] = optimizer
-        self.corpus: TextCorpus = corpus
-        self.test_mode: bool = test_mode
-
-        self.loss_function = torch.nn.CrossEntropyLoss()
-        self.log_interval = 100
-        self.split = split
-        self.loss = loss
-        self.optimizer_state = optimizer_state
-
-    def train(
-        self,
-        base_path: Union[Path, str],
-        sequence_length: int,
         learning_rate: float = 20,
         mini_batch_size: int = 100,
         anneal_factor: float = 0.25,
@@ -191,6 +178,17 @@ class LanguageModelTrainer(LightningLite):
         num_workers: int = 2,
         **kwargs,
     ):
+        self.model: LanguageModel = model
+        self.optimizer: Type[Optimizer] = optimizer
+        self.corpus: TextCorpus = corpus
+        self.test_mode: bool = test_mode
+
+        self.loss_function = torch.nn.CrossEntropyLoss()
+        self.log_interval = 100
+        self.split = split
+        self.loss = loss
+        self.optimizer_state = optimizer_state
+        
         self.run(
             base_path=base_path,
             sequence_length=sequence_length,
