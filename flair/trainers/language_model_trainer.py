@@ -303,7 +303,7 @@ class LanguageModelTrainer(LightningLite):
                     # not really sure what this does
                     ntokens = len(self.corpus.dictionary)
 
-                    total_loss = torch.zeros(1, device=flair.device)
+                    total_loss = torch.zeros(1, device=self.device)
                     start_time = time.time()
 
                     for batch, i in enumerate(range(0, train_data.size(0) - 1, sequence_length)):
@@ -348,7 +348,7 @@ class LanguageModelTrainer(LightningLite):
                                 f"| split {curr_split:3d}/{number_of_splits:3d} | {batch:5d}/{len(train_data) // sequence_length:5d} batches "
                                 f"| ms/batch {elapsed * 1000 / self.log_interval:5.2f} | loss {cur_loss:5.4f} | ppl {math.exp(cur_loss):5.4f}"
                             )
-                            total_loss = torch.zeros(1, device=flair.device)
+                            total_loss = torch.zeros(1, device=self.device)
                             start_time = time.time()
 
                     ##########################################################
@@ -435,6 +435,7 @@ class LanguageModelTrainer(LightningLite):
                 output_flat = prediction.view(-1, ntokens)
                 total_loss += len(data) * self.loss_function(output_flat, targets).data
                 hidden = self._repackage_hidden(hidden)
+            total_loss = self.all_gather(total_loss).mean()
             return total_loss.item() / len(data_source)
 
     @staticmethod
@@ -453,9 +454,6 @@ class LanguageModelTrainer(LightningLite):
 
         data = source[i : i + seq_len]
         target = source[i + 1 : i + 1 + seq_len].view(-1)
-
-        data = data.to(flair.device)
-        target = target.to(flair.device)
 
         return data, target
 
