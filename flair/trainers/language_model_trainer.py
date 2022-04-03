@@ -2,10 +2,8 @@ import datetime
 import logging
 import math
 import random
-import sys
 import time
 from pathlib import Path
-from tabnanny import check
 from typing import Iterable, Type, Union
 
 import torch
@@ -16,7 +14,6 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.sgd import SGD
 from torch.utils.data import DataLoader, Dataset
 
-import flair
 from flair.data import Dictionary
 from flair.models import LanguageModel
 from flair.optim import SGDW, ReduceLRWDOnPlateau
