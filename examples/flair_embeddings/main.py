@@ -11,7 +11,7 @@ is_forward_lm = True
 dictionary: Dictionary = Dictionary.load("chars")
 
 # get your corpus, process forward and at the character level
-corpus = TextCorpus("/Users/aniket/Downloads/aclImdb", dictionary, is_forward_lm, character_level=True)
+corpus = TextCorpus("provide/your/corpus/path", dictionary, is_forward_lm, character_level=True)
 
 if __name__== "__main__":
     # instantiate your language model, set hidden size and number of layers
