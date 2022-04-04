@@ -265,7 +265,7 @@ class LanguageModelTrainer(LightningLite):
                 if epoch > 0:
                     training_generator = DataLoader(self.corpus.train, shuffle=True, num_workers=num_workers)
                     training_generator = self.setup_dataloaders(training_generator)
-                    self.model.save_checkpoint(
+                    self.model.module.save_checkpoint(
                         base_path / f"epoch_{epoch}.pt",
                         optimizer,
                         epoch,
@@ -295,7 +295,7 @@ class LanguageModelTrainer(LightningLite):
                     self.model.train()
 
                     # reset variables
-                    hidden = self.model.init_hidden(mini_batch_size)
+                    hidden = self.model.module.init_hidden(mini_batch_size)
 
                     # not really sure what this does
                     ntokens = len(self.corpus.dictionary)
@@ -314,7 +314,7 @@ class LanguageModelTrainer(LightningLite):
                         optimizer.zero_grad()
 
                         # do the forward pass in the model
-                        output, rnn_output, hidden = self.model.forward(data, hidden)
+                        output, rnn_output, hidden = self.model(data, hidden)
 
                         # try to predict the targets
                         loss = self.loss_function(output.view(-1, ntokens), targets)
@@ -356,7 +356,7 @@ class LanguageModelTrainer(LightningLite):
                     # Save the model if the validation loss is the best we've
                     # seen so far.
                     if val_loss < best_val_loss:
-                        self.model.save(savefile)
+                        self.model.module.save(savefile)
                         best_val_loss = val_loss
                         log.info("best split so far")
 
@@ -364,10 +364,10 @@ class LanguageModelTrainer(LightningLite):
 
                     log.info(f"best loss so far {best_val_loss:5.8f}")
 
-                    log.info(self.model.generate_text())
+                    log.info(self.model.module.generate_text())
 
                     if checkpoint:
-                        self.model.save_checkpoint(
+                        self.model.module.save_checkpoint(
                             base_path / "checkpoint.pt",
                             optimizer,
                             epoch,
@@ -424,7 +424,7 @@ class LanguageModelTrainer(LightningLite):
             total_loss = 0
             ntokens = len(self.corpus.dictionary)
 
-            hidden = self.model.init_hidden(eval_batch_size)
+            hidden = self.model.module.init_hidden(eval_batch_size)
 
             for i in range(0, data_source.size(0) - 1, sequence_length):
                 data, targets = self._get_batch(data_source, i, sequence_length)
