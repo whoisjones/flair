@@ -11,21 +11,21 @@ is_forward_lm = True
 dictionary: Dictionary = Dictionary.load("chars")
 
 # get your corpus, process forward and at the character level
-corpus = TextCorpus("/path/to/your/corpus", dictionary, is_forward_lm, character_level=True)
+corpus = TextCorpus("/Users/aniket/Downloads/aclImdb", dictionary, is_forward_lm, character_level=True)
 
-# instantiate your language model, set hidden size and number of layers
-language_model = LanguageModel(dictionary, is_forward_lm, hidden_size=128, nlayers=1)
+if __name__== "__main__":
+    # instantiate your language model, set hidden size and number of layers
+    language_model = LanguageModel(dictionary, is_forward_lm, hidden_size=128, nlayers=1)
 
+    # train your language model
+    trainer = LanguageModelTrainer(accelerator="auto", devices="auto")
 
-# # train your language model
-trainer = LanguageModelTrainer()
-
-trainer.train(
-    language_model,
-    corpus,
-    "resources/taggers/language_model",
-    sequence_length=10,
-    mini_batch_size=10,
-    max_epochs=10,
-    num_workers=0,
-)
+    trainer.train(
+        language_model,
+        corpus,
+        "resources/taggers/language_model",
+        sequence_length=10,
+        mini_batch_size=10,
+        max_epochs=10,
+        num_workers=2,
+    )

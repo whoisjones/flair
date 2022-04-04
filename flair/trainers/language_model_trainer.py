@@ -172,7 +172,7 @@ class LanguageModelTrainer(LightningLite):
         max_epochs: int = 1000,
         checkpoint: bool = False,
         grow_to_sequence_length: int = 0,
-        num_workers: int = 0,
+        num_workers: int = 2,
         **kwargs,
     ):
         # TODO: check if model & optimzer should be instance attribute?
