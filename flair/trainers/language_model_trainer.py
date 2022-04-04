@@ -175,6 +175,7 @@ class LanguageModelTrainer(LightningLite):
         num_workers: int = 2,
         **kwargs,
     ):
+        # TODO: check if model & optimzer should be instance attribute?
         self.model: LanguageModel = model
         self.optimizer: Type[Optimizer] = optimizer
         self.corpus: TextCorpus = corpus
