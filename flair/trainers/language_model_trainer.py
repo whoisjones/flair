@@ -14,6 +14,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.sgd import SGD
 from torch.utils.data import DataLoader, Dataset
 
+import flair
 from flair.data import Dictionary
 from flair.models import LanguageModel
 from flair.optim import SGDW, ReduceLRWDOnPlateau
@@ -151,7 +152,6 @@ class TextCorpus(object):
 
 
 class LanguageModelTrainer(LightningLite):
-
     def train(
         self,
         model: LanguageModel,
@@ -186,7 +186,7 @@ class LanguageModelTrainer(LightningLite):
         self.split = split
         self.loss = loss
         self.optimizer_state = optimizer_state
-        
+
         self.run(
             base_path=base_path,
             sequence_length=sequence_length,
@@ -200,7 +200,7 @@ class LanguageModelTrainer(LightningLite):
             checkpoint=checkpoint,
             grow_to_sequence_length=grow_to_sequence_length,
             num_workers=num_workers,
-            **kwargs
+            **kwargs,
         )
 
     def run(
@@ -219,6 +219,7 @@ class LanguageModelTrainer(LightningLite):
         num_workers: int = 2,
         **kwargs,
     ):
+        flair.device = self.device
         # cast string to Path
         base_path = Path(base_path)
 
