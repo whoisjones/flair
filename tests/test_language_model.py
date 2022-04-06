@@ -57,18 +57,20 @@ def test_train_resume_language_model(resources_path, results_base_path, tasks_ba
     )
 
     # train the language model
-    trainer: LanguageModelTrainer = LanguageModelTrainer(language_model, corpus, test_mode=True)
+    trainer: LanguageModelTrainer = LanguageModelTrainer()
     trainer.train(
+        language_model, corpus,
         results_base_path,
         sequence_length=10,
         mini_batch_size=10,
         max_epochs=2,
         checkpoint=True,
+        test_mode=True,
     )
     del trainer, language_model
 
-    trainer = LanguageModelTrainer.load_checkpoint(results_base_path / "checkpoint.pt", corpus)
-    trainer.train(results_base_path, sequence_length=10, mini_batch_size=10, max_epochs=2)
+    language_model, trainer = LanguageModelTrainer.load_checkpoint(results_base_path / "checkpoint.pt", corpus)
+    trainer.train(language_model, corpus, results_base_path, sequence_length=10, mini_batch_size=10, max_epochs=2)
 
     del trainer
 

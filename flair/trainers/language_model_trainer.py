@@ -471,9 +471,7 @@ class LanguageModelTrainer(LightningLite):
             checkpoint_file = Path(checkpoint_file)
 
         checkpoint = LanguageModel.load_checkpoint(checkpoint_file)
-        return LanguageModelTrainer(
-            checkpoint["model"],
-            corpus,
+        return checkpoint["model"], LanguageModelTrainer(
             optimizer,
             epoch=checkpoint["epoch"],
             split=checkpoint["split"],
