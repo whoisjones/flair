@@ -429,7 +429,8 @@ class LanguageModelTrainer(LightningLite):
 
             for i in range(0, data_source.size(0) - 1, sequence_length):
                 data, targets = self._get_batch(data_source, i, sequence_length)
-                prediction, rnn_output, hidden = self.model.forward(data, hidden)
+
+                prediction, rnn_output, hidden = self.model(data, hidden)
                 output_flat = prediction.view(-1, ntokens)
                 total_loss += len(data) * self.loss_function(output_flat, targets).data
                 hidden = self._repackage_hidden(hidden)
@@ -446,12 +447,11 @@ class LanguageModelTrainer(LightningLite):
         data = data.view(batch_size, -1).t().contiguous()
         return data
 
-    @staticmethod
-    def _get_batch(source, i, sequence_length):
+    def _get_batch(self, source, i, sequence_length):
         seq_len = min(sequence_length, len(source) - 1 - i)
 
-        data = source[i : i + seq_len]
-        target = source[i + 1 : i + 1 + seq_len].view(-1)
+        data = source[i : i + seq_len].to(self.device)
+        target = source[i + 1 : i + 1 + seq_len].view(-1).to(self.device)
 
         return data, target
 
