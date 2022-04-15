@@ -394,18 +394,11 @@ class TARSTagger(FewshotClassifier):
 
         if not isinstance(data_points, list):
             data_points = [data_points]
-        """
-        if self.tars_model.embeddings.context_length == 0:
-            sentences = self._get_tars_formatted_sentences(data_points)
 
-        else:
-            use_context = True
-            sentences = self._extend_context_and_embed(data_points)
-        """
         # Transform input data into TARS format
-        sentences = self._get_tars_formatted_sentences(data_points)
+        #sentences = self._get_tars_formatted_sentences(data_points)
 
-        loss = self.tars_model.forward_loss(sentences)
+        loss = self.tars_model.forward_loss(data_points)
         return loss
 
     def _get_tars_formatted_sentence(self, label, sentence):

@@ -495,27 +495,39 @@ class ModelTrainer:
                     # forward and backward for batch
                     for batch_step in batch_steps:
 
-                        # forward pass
-                        loss = self.model.forward_loss(batch_step)
+                        if not isinstance(batch_step, list):
+                            data_points = [batch_step]
 
-                        if isinstance(loss, tuple):
-                            average_over += loss[1]
-                            loss = loss[0]
+                        # Transform input data into TARS format
+                        batch_step = self.model._get_tars_formatted_sentences(batch_step)
 
-                        # Backward
-                        if use_amp:
-                            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                                scaled_loss.backward()
+                        if len(batch_step) > micro_batch_size:
+                            batch_step = [batch_step[i:i + micro_batch_size] for i in range(0, len(batch_step), micro_batch_size)]
                         else:
-                            loss.backward()
-                        train_loss += loss.item()
+                            batch_step = [batch_step]
 
-                        # identify dynamic embeddings (always deleted) on first sentence
-                        if not dynamic_embeddings:
-                            dynamic_embeddings = identify_dynamic_embeddings(batch[0])
+                        for mini_batch_step in batch_step:
+                            # forward pass
+                            loss = self.model.forward_loss(mini_batch_step)
 
-                        # depending on memory mode, embeddings are moved to CPU, GPU or deleted
-                        store_embeddings(batch, embeddings_storage_mode, dynamic_embeddings)
+                            if isinstance(loss, tuple):
+                                average_over += loss[1]
+                                loss = loss[0]
+
+                            # Backward
+                            if use_amp:
+                                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                                    scaled_loss.backward()
+                            else:
+                                loss.backward()
+                            train_loss += loss.item()
+
+                            # identify dynamic embeddings (always deleted) on first sentence
+                            if not dynamic_embeddings:
+                                dynamic_embeddings = identify_dynamic_embeddings(batch[0])
+
+                            # depending on memory mode, embeddings are moved to CPU, GPU or deleted
+                            store_embeddings(batch, embeddings_storage_mode, dynamic_embeddings)
 
                     # do the optimizer step
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.0)
