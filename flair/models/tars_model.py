@@ -388,17 +388,52 @@ class TARSTagger(FewshotClassifier):
                 "before training this model"
             )
 
+    def forward_loss(
+        self, data_points: Union[List[Sentence], Sentence]
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, int]]:
+
+        if not isinstance(data_points, list):
+            data_points = [data_points]
+        """
+        if self.tars_model.embeddings.context_length == 0:
+            sentences = self._get_tars_formatted_sentences(data_points)
+
+        else:
+            use_context = True
+            sentences = self._extend_context_and_embed(data_points)
+        """
+        # Transform input data into TARS format
+        sentences = self._get_tars_formatted_sentences(data_points)
+
+        loss = self.tars_model.forward_loss(sentences)
+        return loss
+
     def _get_tars_formatted_sentence(self, label, sentence):
 
-        original_text = sentence.to_tokenized_string()
+        text = sentence.to_tokenized_string()
+
+        if self.tars_embeddings.context_length > 0:
+            extended_sentence, offset = self.tars_embeddings._expand_sentence_with_context(sentence)
+            extended_text = extended_sentence.to_tokenized_string()
+
+            label_text_pair_extended = (
+                f"{label} {self.separator} {extended_text}" if self.prefix else f"{extended_text} {self.separator} {label}"
+            )
+        else:
+            offset = 0
 
         label_text_pair = (
-            f"{label} {self.separator} {original_text}" if self.prefix else f"{original_text} {self.separator} {label}"
+            f"{label} {self.separator} {text}" if self.prefix else f"{text} {self.separator} {label}"
         )
 
         label_length = 0 if not self.prefix else len(label.split(" ")) + len(self.separator.split(" "))
 
-        # make a tars sentence where all labels are O by default
+        if self.tars_embeddings.context_length > 0:
+            tars_sentence_extended = Sentence(label_text_pair_extended, use_tokenizer=False)
+            setattr(tars_sentence_extended, "_offset", offset)
+            setattr(tars_sentence_extended, "_original_length", len(sentence))
+            setattr(tars_sentence_extended, "_label_length", label_length)
+
         tars_sentence = Sentence(label_text_pair, use_tokenizer=False)
 
         for entity_label in sentence.get_labels(self.label_type):
@@ -406,9 +441,14 @@ class TARSTagger(FewshotClassifier):
                 new_span = Span(
                     [tars_sentence.get_token(token.idx + label_length) for token in entity_label.data_point]
                 )
+                if self.tars_model.embeddings.context_length > 0:
+                    new_span.sentence = tars_sentence_extended
                 new_span.add_label(self.static_label_type, value="entity")
 
-        return tars_sentence
+        if self.tars_model.embeddings.context_length > 0:
+            return tars_sentence_extended
+        else:
+            return tars_sentence
 
     def _get_state_dict(self):
         model_state = {
