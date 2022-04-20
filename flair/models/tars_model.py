@@ -56,31 +56,56 @@ class FewshotClassifier(flair.nn.Classifier[Sentence]):
 
     def _get_tars_formatted_sentences(self, sentences: List[Sentence]):
         label_text_pairs = []
-        mtl_id = set([s.get_label("multitask_id").value for s in sentences]).pop()
-        if mtl_id != 'O':
-            self.switch_to_task(mtl_id)
-        all_labels = [label.decode("utf-8") for label in self.get_current_label_dictionary().idx2item]
-        for sentence in sentences:
-            label_text_pairs_for_sentence = []
-            if self.training and self.get_current_num_negative_samples() is not None:
+        batch_split = self._split_batch_to_task_ids(sentences)
 
-                positive_labels = list(
-                    OrderedDict.fromkeys([label.value for label in sentence.get_labels(self.label_type)])
-                )
+        for task, batch_step in batch_split.items():
 
-                sampled_negative_labels = self._get_nearest_labels_for(positive_labels)
-
-                for label in positive_labels:
-                    label_text_pairs_for_sentence.append(self._get_tars_formatted_sentence(label, sentence))
-                for label in sampled_negative_labels:
-                    label_text_pairs_for_sentence.append(self._get_tars_formatted_sentence(label, sentence))
-
+            if not task == "O":
+                self.switch_to_task(task)
             else:
-                for label in all_labels:
-                    label_text_pairs_for_sentence.append(self._get_tars_formatted_sentence(label, sentence))
-            label_text_pairs.extend(label_text_pairs_for_sentence)
+                pass
+
+            all_labels = [label.decode("utf-8") for label in self.get_current_label_dictionary().idx2item]
+            for sentence in batch_step:
+
+                label_text_pairs_for_sentence = []
+
+                if self.training and self.get_current_num_negative_samples() is not None:
+
+                    positive_labels = list(
+                        OrderedDict.fromkeys([label.value for label in sentence.get_labels(self.label_type)])
+                    )
+
+                    sampled_negative_labels = self._get_nearest_labels_for(positive_labels)
+
+                    for label in positive_labels:
+                        label_text_pairs_for_sentence.append(self._get_tars_formatted_sentence(label, sentence))
+                    for label in sampled_negative_labels:
+                        label_text_pairs_for_sentence.append(self._get_tars_formatted_sentence(label, sentence))
+
+                else:
+                    for label in all_labels:
+                        label_text_pairs_for_sentence.append(self._get_tars_formatted_sentence(label, sentence))
+                label_text_pairs.extend(label_text_pairs_for_sentence)
 
         return label_text_pairs
+
+    @staticmethod
+    def _split_batch_to_task_ids(sentences: Union[List[Sentence], Sentence]):
+        """
+        Splits a batch of sentences to its respective model. If single sentence is assigned to several tasks
+        (i.e. same corpus but different tasks), then the model assignment for this batch is randomly choosen.
+        :param sentences: batch of sentences
+        :return: Key-value pairs as (task_id, list of sentences ids in batch)
+        """
+        batch_to_task_mapping = {}
+        for sentence in sentences:
+            multitask_id = sentence.get_label("multitask_id")
+            if not multitask_id.value in batch_to_task_mapping:
+                batch_to_task_mapping[multitask_id.value] = [sentence]
+            elif multitask_id.value in batch_to_task_mapping:
+                batch_to_task_mapping[multitask_id.value].append(sentence)
+        return batch_to_task_mapping
 
     def _get_nearest_labels_for(self, labels):
 
@@ -397,9 +422,9 @@ class TARSTagger(FewshotClassifier):
         self.prefix = prefix
         self.num_negative_labels_to_sample = num_negative_labels_to_sample
 
-        if task_name and label_dictionary and label_type:
+        if task_name and label_dictionary and label_type and num_negative_labels_to_sample:
             # Store task specific labels since TARS can handle multiple tasks
-            self.add_and_switch_to_new_task(task_name, label_dictionary, label_type)
+            self.add_and_switch_to_new_task(task_name, label_dictionary, label_type, num_negative_labels_to_sample=num_negative_labels_to_sample)
         else:
             log.info(
                 "TARS initialized without a task. You need to call .add_and_switch_to_new_task() "
@@ -419,9 +444,6 @@ class TARSTagger(FewshotClassifier):
             task_id = set([dp.get_label("multitask_id").value for dp in data_points])
             assert len(task_id) == 1
             self.switch_to_task(task_id.pop())
-
-        # Transform input data into TARS format
-        #sentences = self._get_tars_formatted_sentences(data_points)
 
         loss = self.tars_model.forward_loss(data_points)
         return loss
