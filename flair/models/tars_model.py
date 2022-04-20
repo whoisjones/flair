@@ -56,6 +56,9 @@ class FewshotClassifier(flair.nn.Classifier[Sentence]):
 
     def _get_tars_formatted_sentences(self, sentences: List[Sentence]):
         label_text_pairs = []
+        mtl_id = set([s.get_label("multitask_id").value for s in sentences]).pop()
+        if mtl_id != 'O':
+            self.switch_to_task(mtl_id)
         all_labels = [label.decode("utf-8") for label in self.get_current_label_dictionary().idx2item]
         for sentence in sentences:
             label_text_pairs_for_sentence = []
