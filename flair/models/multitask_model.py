@@ -108,7 +108,7 @@ class MultitaskModel(flair.nn.Model):
                                                      gold_label_dictionary=gold_label_dictionary)
 
             log.info(f"{task} - {self.__getattr__(task)._get_name()} - "
-                     f"{self.__getattr__(task).corpus_name} - {self.label_type.get(task)} - "
+                     f"Corpus: {task.split('_')[0]} - Task: {task.split('_')[1]} - "
                      f"loss: {result.loss} - {main_evaluation_metric[1]} "
                      f"({main_evaluation_metric[0]})  {round(result.main_score, 4)}")
 
@@ -116,8 +116,8 @@ class MultitaskModel(flair.nn.Model):
             main_score += result.main_score
             all_detailed_results += 50*'-' + "\n\n" +\
                                     task + " - " +\
-                                    self.__getattr__(task)._get_name() + " - " +\
-                                    "Corpus: " + self.__getattr__(task).corpus_name + " - " +\
+                                    task.split('_')[1] + " - " +\
+                                    "Corpus: " + task.split('_')[0] + " - " +\
                                     "Label type: " + self.label_type.get(task) + "\n\n" + \
                                     result.detailed_results
 
