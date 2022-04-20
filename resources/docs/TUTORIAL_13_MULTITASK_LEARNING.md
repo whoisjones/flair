@@ -475,10 +475,11 @@ def run_train(args):
             )
     flair.device = f"cuda:{args.cuda_device}" if args.cuda else "cpu"
 
-    corpus = get_corpus(args.corpus, corpus_type=args.corpus_type)
+    configuration = get_corpus(args.corpus, corpus_type=args.corpus_type).pop()
+    corpus = configuration.get("corpus")
     print(corpus)
 
-    label_dict = corpus.make_label_dictionary(label_type=args.label_type)
+    label_dict = configuration.get("label_space")
     print(label_dict)
 
     embeddings = TransformerWordEmbeddings(model=args.transformer_model,
