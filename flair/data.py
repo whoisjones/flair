@@ -1529,9 +1529,15 @@ class Corpus:
 
 
 class MultiCorpus(Corpus):
-    def __init__(self, corpora: List[Corpus], name: str = "multicorpus", **corpusargs):
-        if corpusargs.get("task_ids") is not None:
-            for task_id, corpus in zip(corpusargs.get("task_ids"), corpora):
+    def __init__(
+            self,
+            corpora: List[Corpus],
+            task_ids: list = None,
+            name: str = "multicorpus",
+            **corpusargs
+    ):
+        if task_ids:
+            for task_id, corpus in zip(task_ids, corpora):
                 for sentence in corpus.get_all_sentences():
                     sentence.add_label(_MULTITASK_LABEL, task_id)
         else:

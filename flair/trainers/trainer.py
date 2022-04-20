@@ -499,7 +499,8 @@ class ModelTrainer:
                             data_points = [batch_step]
 
                         # Transform input data into TARS format
-                        batch_step = self.model._get_tars_formatted_sentences(batch_step)
+                        tars_model = self.model.tasks[0]
+                        batch_step = self.model.__getattr__(tars_model)._get_tars_formatted_sentences(batch_step)
 
                         if len(batch_step) > micro_batch_size:
                             batch_step = [batch_step[i:i + micro_batch_size] for i in range(0, len(batch_step), micro_batch_size)]

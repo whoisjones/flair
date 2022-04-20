@@ -22,7 +22,7 @@ class MultitaskModel(flair.nn.Model):
     model.
     """
 
-    def __init__(self, models: List, task_ids: List):
+    def __init__(self, models: List, task_ids: List = None):
         """
         :param models: Key (Task ID) - Value (flair.nn.Model) Pairs to stack model
         """

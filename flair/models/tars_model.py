@@ -59,7 +59,7 @@ class FewshotClassifier(flair.nn.Classifier[Sentence]):
         all_labels = [label.decode("utf-8") for label in self.get_current_label_dictionary().idx2item]
         for sentence in sentences:
             label_text_pairs_for_sentence = []
-            if self.training and self.num_negative_labels_to_sample is not None:
+            if self.training and self.get_current_num_negative_samples() is not None:
 
                 positive_labels = list(
                     OrderedDict.fromkeys([label.value for label in sentence.get_labels(self.label_type)])
@@ -86,7 +86,7 @@ class FewshotClassifier(flair.nn.Classifier[Sentence]):
             tags = self.get_current_label_dictionary().get_items()
             import random
 
-            sample = random.sample(tags, k=self.num_negative_labels_to_sample)
+            sample = random.sample(tags, k=self.get_current_num_negative_samples())
             return sample
 
         already_sampled_negative_labels = set()
@@ -410,6 +410,13 @@ class TARSTagger(FewshotClassifier):
         if not isinstance(data_points, list):
             data_points = [data_points]
 
+        if len(self.list_existing_tasks()) == 1:
+            pass
+        else:
+            task_id = set([dp.get_label("multitask_id").value for dp in data_points])
+            assert len(task_id) == 1
+            self.switch_to_task(task_id.pop())
+
         # Transform input data into TARS format
         #sentences = self._get_tars_formatted_sentences(data_points)
 
@@ -452,6 +459,12 @@ class TARSTagger(FewshotClassifier):
                 if self.tars_model.embeddings.context_length > 0:
                     new_span.sentence = tars_sentence_extended
                 new_span.add_label(self.static_label_type, value="entity")
+
+        for multitask_label in sentence.get_labels("multitask_id"):
+            if self.tars_embeddings.context_length > 0:
+                tars_sentence_extended.add_label("multitask_id", multitask_label.value)
+            else:
+                tars_sentence.add_label("multitask_id", multitask_label.value)
 
         if self.tars_model.embeddings.context_length > 0:
             return tars_sentence_extended
@@ -531,6 +544,13 @@ class TARSTagger(FewshotClassifier):
         you wish to not only predict, but also keep the generated embeddings in CPU or GPU memory respectively.
         'gpu' to store embeddings in GPU memory.
         """
+        if len(self.list_existing_tasks()) == 1:
+            pass
+        else:
+            task_id = set([dp.get_label("multitask_id").value for dp in sentences])
+            assert len(task_id) == 1
+            self.switch_to_task(task_id.pop())
+
         if label_name is None:
             label_name = self.get_current_label_type()
 
