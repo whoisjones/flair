@@ -444,7 +444,7 @@ Finally run your models like:
 where `local_model.py` is one of the scripts below and `config.yaml`
 the respective YAML file.
 
-Single TARS model
+TARS - single model
 ------
 Add this file also to your local repository.
 
@@ -512,7 +512,7 @@ if __name__ == "__main__":
 ```
 </details>
 
-Multitask TARS model
+TARS - multitask model
 ------
 Add this file also to your local repository.
 
@@ -595,4 +595,149 @@ if __name__ == "__main__":
 ```
 </details>
 
+Baseline SequenceTagger - single model
+------
+Add this file also to your local repository.
 
+<b>Important</b>:
+Be sure that you are on the branch `multitask.`
+
+<details>
+<summary>local_sequence_tagger.py</summary>
+
+```
+import torch
+import flair
+from flair.models import SequenceTagger
+from flair.embeddings import TransformerWordEmbeddings
+from flair.trainers import ModelTrainer
+
+from local_args import get_arguments
+from local_get_corpora import get_corpus
+
+
+def run_train(args):
+
+    # SET CUDA DEVICE
+    if torch.cuda.is_available():
+        if not args.cuda:
+            print(
+                "WARNING: You have a CUDA device, so you should probably run with --cuda"
+            )
+    flair.device = f"cuda:{args.cuda_device}" if args.cuda else "cpu"
+
+    # corpus_type can either be 'standard' for SequenceTagger or 'tars' for TARSTagger
+    configuration = get_corpus(args.corpus, corpus_type=args.corpus_type).pop()
+    corpus = configuration.get("corpus")
+    print(corpus)
+
+    label_dict = configuration.get("label_space")
+    print(label_dict)
+
+    embeddings = TransformerWordEmbeddings(model=args.transformer_model,
+                                           layers=args.layers,
+                                           subtoken_pooling=args.subtoken_pooling,
+                                           fine_tune=args.fine_tune,
+                                           use_context=args.use_context,
+                                           )
+
+    tagger = SequenceTagger(embeddings=embeddings,
+                            tag_dictionary=label_dict,
+                            tag_type=args.label_type,
+                            use_crf=False,
+                            use_rnn=False,
+                            reproject_embeddings=False,
+                            )
+
+    trainer = ModelTrainer(tagger, corpus)
+
+    trainer.fine_tune(f'resources/{args.path}/run{args.run}',
+                      learning_rate=args.learning_rate,
+                      mini_batch_size=args.batch_size,
+                      mini_batch_chunk_size=args.batch_chunk_size
+                      )
+
+
+if __name__ == "__main__":
+    args = get_arguments()
+    run_train(args)
+```
+</details>
+
+Baseline SequenceTagger - multitask model
+------
+Add this file also to your local repository.
+
+<b>Important</b>:
+Be sure that you are on the branch `multitask.`
+
+<details>
+<summary>local_multitask_sequence_tagger.py</summary>
+
+```
+import torch
+import flair
+from flair.data import MultiCorpus
+from flair.models import SequenceTagger, MultitaskModel
+from flair.embeddings import TransformerWordEmbeddings
+from flair.trainers import ModelTrainer
+
+from local_args import get_arguments
+from local_get_corpora import get_corpus
+
+
+def run_train(args):
+
+    # SET CUDA DEVICE
+    if torch.cuda.is_available():
+        if not args.cuda:
+            print(
+                "WARNING: You have a CUDA device, so you should probably run with --cuda"
+            )
+    flair.device = f"cuda:{args.cuda_device}" if args.cuda else "cpu"
+
+    model_corpus_configurations = get_corpus(args.corpus, args.corpus_type, label_type=args.label_type)
+
+    # ----- SHARED EMBEDDING LAYERS -----
+    embeddings = TransformerWordEmbeddings(model=args.transformer_model,
+                                           layers=args.layers,
+                                           subtoken_pooling=args.subtoken_pooling,
+                                           fine_tune=args.fine_tune,
+                                           use_context=args.use_context,
+                                           )
+
+    # ----- TASKS -----
+    taggers = []
+    for configuration in model_corpus_configurations:
+        taggers.append(
+            SequenceTagger(embeddings=embeddings,
+                           tag_dictionary=configuration.get("label_space"),
+                           tag_type=configuration.get("label_type"),
+                           use_crf=False,
+                           use_rnn=False,
+                           reproject_embeddings=False)
+        )
+
+    multicorpus = MultiCorpus(
+        corpora=[config.get("corpus") for config in model_corpus_configurations],
+        task_ids=[config.get("id") for config in model_corpus_configurations]
+    )
+
+    # ----- MULTITASK MODEL -----
+    multitask_model: MultitaskModel = MultitaskModel(
+        models=taggers,
+        task_ids=[config.get("id") for config in model_corpus_configurations]
+    )
+
+    # ----- TRAINING ON MODEL AND CORPUS -----
+    trainer: ModelTrainer = ModelTrainer(multitask_model, multicorpus)
+    trainer.fine_tune(f'resources/{args.path}/run{args.run}',
+                      learning_rate=args.learning_rate,
+                      mini_batch_size=args.batch_size,
+                      mini_batch_chunk_size=args.batch_chunk_size)
+
+if __name__ == "__main__":
+    args = get_arguments()
+    run_train(args)
+```
+</details>
