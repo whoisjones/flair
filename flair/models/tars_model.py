@@ -1,5 +1,4 @@
 import logging
-import random
 from collections import OrderedDict
 from pathlib import Path
 from typing import List, Optional, Set, Tuple, Union
@@ -58,14 +57,18 @@ class FewshotClassifier(flair.nn.Classifier[Sentence]):
     def _get_tars_formatted_sentences(self, sentences: List[Sentence]):
         label_text_pairs = []
         batch_split = self._split_batch_to_task_ids(sentences)
-        label_text_pairs_for_sentence = []
+
         for task, batch_step in batch_split.items():
+
             if not task == "O":
                 self.switch_to_task(task)
             else:
                 pass
+
             all_labels = [label.decode("utf-8") for label in self.get_current_label_dictionary().idx2item]
             for sentence in batch_step:
+
+                label_text_pairs_for_sentence = []
 
                 if self.training and self.get_current_num_negative_samples() is not None:
 
@@ -97,7 +100,7 @@ class FewshotClassifier(flair.nn.Classifier[Sentence]):
         """
         batch_to_task_mapping = {}
         for sentence in sentences:
-            multitask_id = random.choice(sentence.get_labels("multitask_id"))
+            multitask_id = sentence.get_label("multitask_id")
             if not multitask_id.value in batch_to_task_mapping:
                 batch_to_task_mapping[multitask_id.value] = [sentence]
             elif multitask_id.value in batch_to_task_mapping:
@@ -419,9 +422,9 @@ class TARSTagger(FewshotClassifier):
         self.prefix = prefix
         self.num_negative_labels_to_sample = num_negative_labels_to_sample
 
-        if task_name and label_dictionary and label_type:
+        if task_name and label_dictionary and label_type and num_negative_labels_to_sample:
             # Store task specific labels since TARS can handle multiple tasks
-            self.add_and_switch_to_new_task(task_name, label_dictionary, label_type)
+            self.add_and_switch_to_new_task(task_name, label_dictionary, label_type, num_negative_labels_to_sample=num_negative_labels_to_sample)
         else:
             log.info(
                 "TARS initialized without a task. You need to call .add_and_switch_to_new_task() "
@@ -441,9 +444,6 @@ class TARSTagger(FewshotClassifier):
             task_id = set([dp.get_label("multitask_id").value for dp in data_points])
             assert len(task_id) == 1
             self.switch_to_task(task_id.pop())
-
-        # Transform input data into TARS format
-        #sentences = self._get_tars_formatted_sentences(data_points)
 
         loss = self.tars_model.forward_loss(data_points)
         return loss
