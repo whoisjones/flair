@@ -354,6 +354,15 @@ class ModelTrainer:
 
             train_data = ConcatDataset(parts)
 
+        # initialize sampler if provided
+        if sampler is not None:
+            # init with default values if only class is provided
+            if inspect.isclass(sampler):
+                sampler = sampler()
+            # set dataset to sample from
+            sampler.set_dataset(train_data)
+            shuffle = False
+
         dev_score_history = []
         dev_loss_history = []
         train_loss_history = []
