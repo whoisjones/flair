@@ -3,6 +3,7 @@ import random
 from collections import defaultdict
 from typing import Dict
 
+import numpy as np
 import torch
 from torch.utils.data.sampler import Sampler
 
@@ -111,3 +112,96 @@ class ExpandingChunkSampler(FlairSampler):
             self.block_size += 1
 
         return iter(data)
+
+class AlphaSampler(FlairSampler):
+
+    def __init__(self, alpha=1, sample_size=None, batch_corpus_together=False):
+        self.alpha = alpha
+        self.size = sample_size
+        self.batch_corpus_together = batch_corpus_together
+
+    def __iter__(self):
+        relative_shares = [dataset_size / sum(self.sizes) for dataset_size in self.sizes]
+        denominator = sum([relative_share ** self.alpha for relative_share in relative_shares])
+        sample_sizes = [int((1 / pi) * ((pi ** self.alpha) / denominator) * size) for pi, size in zip(relative_shares, self.sizes)]
+        sample_sizes = [int(x / sum(sample_sizes) * self.size) for x in sample_sizes]
+        indices = []
+        for task_weights, task_indices, sample_size in zip(self.weights, self.indices, sample_sizes):
+            task_samples = random.choices(task_indices, weights=task_weights, k=sample_size)
+            indices += task_samples
+        if not self.batch_corpus_together:
+            random.shuffle(indices)
+        return iter(indices)
+
+    def __len__(self):
+        return self.size
+
+    def set_dataset(self, data_source):
+        """
+        Initialize by passing a classification dataset with labels, i.e. either TextClassificationDataSet or
+        :param data_source:
+        """
+        self.data_source = data_source
+        self.sizes = np.diff(data_source.cumulative_sizes, prepend=0).tolist()
+        self.weights, self.indices = self._get_weights()
+        self.size = sum(self.sizes) if self.size is None else self.size
+
+    def _get_weights(self):
+        weights = []
+        indices = []
+        start = 0
+        for size in self.sizes:
+            end = start + size
+            weights.append(torch.ones(size) / size)
+            indices.append(list(np.arange(start, end)))
+            start = start + size
+        return weights, indices
+
+class AlphaSamplerForTARS(FlairSampler):
+
+    def __init__(self, alpha=1, sample_size=None, batch_corpus_together=False):
+        self.alpha = alpha
+        self.size = sample_size
+        self.batch_corpus_together = batch_corpus_together
+
+    def __iter__(self):
+        relative_shares = [dataset_size / sum(self.sizes) for dataset_size in self.sizes]
+        denominator = sum([relative_share ** self.alpha for relative_share in relative_shares])
+        sample_sizes = [int((1 / pi) * ((pi ** self.alpha) / denominator) * size) for pi, size in zip(relative_shares, self.sizes)]
+        sample_sizes = [int(x / sum(sample_sizes) * self.size) for x in sample_sizes]
+        indices = []
+        for task_weights, task_indices, sample_size in zip(self.weights, self.indices, sample_sizes):
+            task_samples = random.choices(task_indices, weights=task_weights, k=sample_size)
+            indices += task_samples
+        if not self.batch_corpus_together:
+            random.shuffle(indices)
+        return iter(indices)
+
+    def __len__(self):
+        return self.size
+
+    def set_dataset(self, data_source):
+        """
+        Initialize by passing a classification dataset with labels, i.e. either TextClassificationDataSet or
+        :param data_source:
+        """
+        self.data_source = data_source
+        self.sizes = np.diff(data_source.cumulative_sizes, prepend=0).tolist()
+        self.weights, self.indices = self._get_weights()
+        self.size = sum(self.sizes) if self.size is None else self.size
+
+    def _get_weights(self):
+        _number_of_labels_per_sentence = []
+        for sentence in self.data_source:
+            _number_of_labels_per_sentence.append(
+                len(set([label.value for label in sentence.get_labels("ner")])) + 1
+            )
+        weights = []
+        indices = []
+        start = 0
+        for size in self.sizes:
+            end = start + size
+            weights.append(torch.tensor(_number_of_labels_per_sentence[start:end]) / size)
+            indices.append(list(np.arange(start, end)))
+            start = start + size
+        return weights, indices
