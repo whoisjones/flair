@@ -689,6 +689,8 @@ class TransformerEmbedding(Embeddings[Sentence]):
         gradient_context = torch.enable_grad() if (self.fine_tune and self.training) else torch.no_grad()
 
         with gradient_context:
+            if input_ids.shape[1] > 512:
+                print()
             hidden_states = self.model(input_ids, **model_kwargs)[-1]
 
             # make the tuple a tensor; makes working with it easier.
