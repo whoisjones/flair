@@ -281,13 +281,6 @@ class SequenceTagger(flair.nn.Classifier[Sentence]):
             sentences = [sentences]
         self.embeddings.embed(sentences)
 
-        if self.embeddings.context_length > 0:
-            for s in sentences:
-                s.tokens = s.tokens[0: s._label_length] + s.tokens[s._label_length + s._offset: s._label_length + s._offset + s._original_length]
-                for idx, token in enumerate(s.tokens):
-                    token._internal_index = idx + 1
-                s.tokenized = " ".join([t.text for t in s.tokens])
-
         # make a zero-padded tensor for the whole sentence
         lengths, sentence_tensor = self._make_padded_tensor_for_batch(sentences)
 
