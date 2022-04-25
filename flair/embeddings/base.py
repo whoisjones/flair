@@ -215,8 +215,9 @@ class TransformerEmbedding(Embeddings[Sentence]):
         self.truncate = True
 
         if self.tokenizer.model_max_length > LARGE_INTEGER:
-            allow_long_sentences = False
-            self.truncate = False
+            allow_long_sentences = True
+            self.truncate = True
+            self.tokenizer.model_max_length = 512
 
         self.stride = self.tokenizer.model_max_length // 2 if allow_long_sentences else 0
         self.allow_long_sentences = allow_long_sentences
