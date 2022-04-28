@@ -205,3 +205,34 @@ class AlphaSamplerForTARS(FlairSampler):
             indices.append(list(np.arange(start, end)))
             start = start + size
         return weights, indices
+
+class KShotSampler(FlairSampler):
+
+    def __init__(self, k: int, num_labels: int, seed: int = None):
+        self.k = k
+        self.num_labels = num_labels
+        self.seed = seed
+
+    def __iter__(self):
+        batch = []
+        for label, indices in self.label_to_idx.items():
+            random.seed(self.seed)
+            batch.append(random.sample(indices, self.k))
+        batch = [item for sublist in batch for item in sublist]
+        return iter(batch)
+
+    def __len__(self):
+        return self.num_samples * self.num_labels
+
+    def set_dataset(self, data_source):
+        self.data_source = data_source
+        self.num_samples = len(self.data_source)
+        label_to_idx = {}
+        for i in range(self.num_samples):
+            labels = set([label.value for label in self.data_source[i].get_labels("ner")])
+            for label in labels:
+                if label in label_to_idx:
+                    label_to_idx[label].append(i)
+                else:
+                    label_to_idx[label] = [i]
+        self.label_to_idx = label_to_idx
