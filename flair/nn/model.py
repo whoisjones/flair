@@ -88,7 +88,7 @@ class Model(torch.nn.Module, typing.Generic[DT]):
         model_state = self._get_state_dict()
 
         # in Flair <0.9.1, optimizer and scheduler used to train model are not saved
-        optimizer = scheduler = None
+        optimizer = scheduler = sampler = None
 
         # write out a "model card" if one is set
         if self.model_card is not None:
@@ -112,6 +112,14 @@ class Model(torch.nn.Module, typing.Generic[DT]):
                             training_parameters["scheduler_state_dict"] = scheduler.state_dict()
                     training_parameters["scheduler"] = scheduler.__class__
 
+                if "sampler" in training_parameters:
+                    scheduler = training_parameters["sampler"]
+                    if checkpoint:
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            training_parameters["sampler"] = scheduler.state_dict()
+                    training_parameters["sampler"] = scheduler.__class__
+
             model_state["model_card"] = self.model_card
 
         # save model
@@ -123,6 +131,8 @@ class Model(torch.nn.Module, typing.Generic[DT]):
                 self.model_card["training_parameters"]["optimizer"] = optimizer
             if scheduler:
                 self.model_card["training_parameters"]["scheduler"] = scheduler
+            if sampler:
+                self.model_card["training_parameters"]["sampler"] = sampler
 
     @classmethod
     def load(cls, model_path: Union[str, Path]):
