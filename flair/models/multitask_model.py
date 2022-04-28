@@ -71,16 +71,16 @@ class MultitaskModel(flair.nn.Model):
         return batch_to_task_mapping
 
     def evaluate(
-            self,
-            data_points: Union[List[Sentence], Dataset],
-            gold_label_type: str,
-            out_path: Union[str, Path] = None,
-            embedding_storage_mode: str = "none",
-            mini_batch_size: int = 32,
-            num_workers: int = 8,
-            main_evaluation_metric: Tuple[str, str] = ("micro avg", "f1-score"),
-            exclude_labels: List[str] = [],
-            gold_label_dictionary: Optional[Dictionary] = None
+        self,
+        data_points: Union[List[Sentence], Dataset],
+        gold_label_type: str,
+        out_path: Union[str, Path] = None,
+        embedding_storage_mode: str = "none",
+        mini_batch_size: int = 32,
+        num_workers: int = 8,
+        main_evaluation_metric: Tuple[str, str] = ("micro avg", "f1-score"),
+        exclude_labels: List[str] = [],
+        gold_label_dictionary: Optional[Dictionary] = None,
     ) -> Result:
         """
         :param sentences: batch of sentences
@@ -95,34 +95,47 @@ class MultitaskModel(flair.nn.Model):
 
         loss = 0
         main_score = 0
-        all_detailed_results = ''
+        all_detailed_results = ""
         for task, split in batch_split.items():
-            result = self.__getattr__(task).evaluate(data_points=[data_points[i] for i in split],
-                                                     gold_label_type=gold_label_type[task],
-                                                     out_path=f'{out_path}_{task}.txt',
-                                                     embedding_storage_mode=embedding_storage_mode,
-                                                     mini_batch_size=mini_batch_size,
-                                                     num_workers=num_workers,
-                                                     main_evaluation_metric=main_evaluation_metric,
-                                                     exclude_labels=exclude_labels,
-                                                     gold_label_dictionary=gold_label_dictionary)
+            result = self.__getattr__(task).evaluate(
+                data_points=[data_points[i] for i in split],
+                gold_label_type=gold_label_type[task],
+                out_path=f"{out_path}_{task}.txt",
+                embedding_storage_mode=embedding_storage_mode,
+                mini_batch_size=mini_batch_size,
+                num_workers=num_workers,
+                main_evaluation_metric=main_evaluation_metric,
+                exclude_labels=exclude_labels,
+                gold_label_dictionary=gold_label_dictionary,
+            )
 
-            log.info(f"{task} - {self.__getattr__(task)._get_name()} - "
-                     f"Corpus: {task.split('_')[0]} - Task: {task.split('_')[1]} - "
-                     f"loss: {result.loss} - {main_evaluation_metric[1]} "
-                     f"({main_evaluation_metric[0]})  {round(result.main_score, 4)}")
+            log.info(
+                f"{task} - {self.__getattr__(task)._get_name()} - "
+                f"Corpus: {task.split('_')[0]} - Task: {task.split('_')[1]} - "
+                f"loss: {result.loss} - {main_evaluation_metric[1]} "
+                f"({main_evaluation_metric[0]})  {round(result.main_score, 4)}"
+            )
 
             loss += result.loss
             main_score += result.main_score
-            all_detailed_results += 50*'-' + "\n\n" +\
-                                    task + " - " +\
-                                    task.split('_')[1] + " - " +\
-                                    "Corpus: " + task.split('_')[0] + " - " +\
-                                    "Label type: " + self.label_type.get(task) + "\n\n" + \
-                                    result.detailed_results
+            all_detailed_results += (
+                50 * "-"
+                + "\n\n"
+                + task
+                + " - "
+                + task.split("_")[1]
+                + " - "
+                + "Corpus: "
+                + task.split("_")[0]
+                + " - "
+                + "Label type: "
+                + self.label_type.get(task)
+                + "\n\n"
+                + result.detailed_results
+            )
 
-        result.loss = (loss / len(batch_split))
-        result.main_score = (main_score / len(batch_split))
+        result.loss = loss / len(batch_split)
+        result.main_score = main_score / len(batch_split)
 
         # the detailed result is the combination of all detailed results
         result.detailed_results = all_detailed_results
@@ -137,8 +150,10 @@ class MultitaskModel(flair.nn.Model):
         model_state = {}
 
         for task in self.tasks:
-            model_state[task] = {"state_dict": self.__getattr__(task)._get_state_dict(),
-                                 "class": self.__getattr__(task).__class__}
+            model_state[task] = {
+                "state_dict": self.__getattr__(task)._get_state_dict(),
+                "class": self.__getattr__(task).__class__,
+            }
 
         return model_state
 
