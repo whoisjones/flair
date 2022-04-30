@@ -347,7 +347,7 @@ class FewshotClassifier(flair.nn.Classifier[Sentence]):
 
         try:
             # make zero shot predictions
-            self.evaluate(sentences, gold_label_type="ner")
+            self.predict(sentences)
         finally:
             # switch to the pre-existing task
             self.switch_to_task(existing_current_task)
