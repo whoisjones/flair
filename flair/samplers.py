@@ -208,9 +208,8 @@ class AlphaSamplerForTARS(FlairSampler):
 
 class KShotSampler(FlairSampler):
 
-    def __init__(self, k: int, num_labels: int, seed: int = None):
+    def __init__(self, k: int, seed: int = None):
         self.k = k
-        self.num_labels = num_labels
         self.seed = seed
 
     def __iter__(self):
@@ -235,4 +234,5 @@ class KShotSampler(FlairSampler):
                     label_to_idx[label].append(i)
                 else:
                     label_to_idx[label] = [i]
+        self.num_labels = len(label_to_idx)
         self.label_to_idx = label_to_idx
