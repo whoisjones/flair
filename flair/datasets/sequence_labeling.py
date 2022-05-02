@@ -2860,45 +2860,29 @@ class NER_MULTI_WIKIANN(MultiCorpus):
         # list that contains the columncopora
         corpora: List[Corpus] = []
 
-        google_drive_path = "https://drive.google.com/uc?id="
-        # download data if necessary
-        first = True
-        for language in languages:
+        aws_path = "https://s3.amazonaws.com/datasets.huggingface.co/wikiann/1.1.0/panx_dataset.zip"
+        if not (data_folder / "panx_dataset.zip").exists():
+            cached_path(aws_path, Path("datasets") / dataset_name)
+            shutil.unpack_archive(data_folder / "panx_dataset.zip", data_folder)
 
+        # download data if necessary
+        for language in languages:
             language_folder = data_folder / language
-            file_name = "wikiann-" + language + ".bio"
 
             # if language not downloaded yet, download it
             if not language_folder.exists():
-                if first:
-                    import tarfile
-
-                    import gdown
-
-                    first = False
-                # create folder
-                os.makedirs(language_folder)
-                # get google drive id from list
-                google_id = self._google_drive_id_from_language_name(language)
-                url = google_drive_path + google_id
-
-                # download from google drive
-                gdown.download(url, str(language_folder / language) + ".tar.gz")
-
                 # unzip
                 log.info("Extracting data...")
-                tar = tarfile.open(str(language_folder / language) + ".tar.gz", "r:gz")
-                # tar.extractall(language_folder,members=[tar.getmember(file_name)])
-                tar.extract(file_name, str(language_folder))
-                tar.close()
+                shutil.unpack_archive(data_folder / f"{language}.tar.gz", language_folder)
                 log.info("...done.")
 
                 # transform data into required format
                 # the processed dataset has the additional ending "_new"
                 log.info("Processing dataset...")
-                self._silver_standard_to_simple_ner_annotation(str(language_folder / file_name))
-                # remove the unprocessed dataset
-                os.remove(str(language_folder / file_name))
+                for file in os.listdir(language_folder):
+                    self._silver_standard_to_simple_ner_annotation(str(language_folder / file))
+                    # remove the unprocessed dataset
+                    os.remove(str(language_folder / file))
                 log.info("...done.")
 
             # initialize comlumncorpus and add it to list
@@ -2906,7 +2890,6 @@ class NER_MULTI_WIKIANN(MultiCorpus):
             corp = ColumnCorpus(
                 data_folder=language_folder,
                 column_format=columns,
-                train_file=file_name + "_new",
                 tag_to_bioes=tag_to_bioes,
                 in_memory=in_memory,
                 **corpusargs,
@@ -2929,8 +2912,8 @@ class NER_MULTI_WIKIANN(MultiCorpus):
                     if line == "\n":
                         f_write.write(line)
                     else:
-                        liste = line.split()
-                        f_write.write(liste[0] + " " + liste[-1] + "\n")
+                        liste = re.findall(r"\:(.*)", line).pop().split()
+                        f_write.write(liste[0] + " " + liste[1] + "\n")
                 else:
                     break
 
