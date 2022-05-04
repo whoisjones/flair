@@ -2863,7 +2863,7 @@ class NER_MULTI_WIKIANN(MultiCorpus):
         aws_path = "https://s3.amazonaws.com/datasets.huggingface.co/wikiann/1.1.0/panx_dataset.zip"
         if not (data_folder / "panx_dataset.zip").exists():
             cached_path(aws_path, Path("datasets") / dataset_name)
-            shutil.unpack_archive(data_folder / "panx_dataset.zip", data_folder)
+            shutil.unpack_archive(f"{data_folder}/panx_dataset.zip", data_folder)
 
         # download data if necessary
         for language in languages:
@@ -2873,7 +2873,7 @@ class NER_MULTI_WIKIANN(MultiCorpus):
             if not language_folder.exists():
                 # unzip
                 log.info("Extracting data...")
-                shutil.unpack_archive(data_folder / f"{language}.tar.gz", language_folder)
+                shutil.unpack_archive(f"{data_folder}/{language}.tar.gz", language_folder)
                 log.info("...done.")
 
                 # transform data into required format
