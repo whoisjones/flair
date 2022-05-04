@@ -248,7 +248,7 @@ class ModelTrainer:
         # determine what splits (train, dev, test) to evaluate and log
         log_train = True if monitor_train else False
         log_test = True if (not param_selection_mode and self.corpus.test and monitor_test) else False
-        log_dev = False if train_with_dev or not self.corpus.dev else True
+        log_dev = False #if train_with_dev or not self.corpus.dev else True
         log_train_part = True if (eval_on_train_fraction == "dev" or eval_on_train_fraction > 0.0) else False
 
         if log_train_part:
@@ -713,7 +713,7 @@ class ModelTrainer:
                 # determine if this is the best model or if we need to anneal
                 current_epoch_has_best_model_so_far = False
                 # default mode: anneal against dev score
-                if not train_with_dev and not anneal_against_dev_loss:
+                if not train_with_dev and not anneal_against_dev_loss and False:
                     if dev_score > best_validation_score:
                         current_epoch_has_best_model_so_far = True
                         best_validation_score = dev_score
@@ -722,7 +722,7 @@ class ModelTrainer:
                         scheduler.step(dev_score, dev_eval_result.loss)
 
                 # alternative: anneal against dev loss
-                if not train_with_dev and anneal_against_dev_loss:
+                if not train_with_dev and anneal_against_dev_loss and False:
                     if dev_eval_result.loss < best_validation_score:
                         current_epoch_has_best_model_so_far = True
                         best_validation_score = dev_eval_result.loss
