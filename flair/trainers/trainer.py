@@ -510,24 +510,24 @@ class ModelTrainer:
                             # forward pass
                             loss = self.model.forward_loss(mini_batch_step)
 
-                        if isinstance(loss, tuple):
-                            average_over += loss[1]
-                            loss = loss[0]
+                            if isinstance(loss, tuple):
+                                average_over += loss[1]
+                                loss = loss[0]
 
-                        # Backward
-                        if use_amp:
-                            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                                scaled_loss.backward()
-                        else:
-                            loss.backward()
-                        train_loss += loss.item()
+                            # Backward
+                            if use_amp:
+                                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                                    scaled_loss.backward()
+                            else:
+                                loss.backward()
+                            train_loss += loss.item()
 
-                        # identify dynamic embeddings (always deleted) on first sentence
-                        if not dynamic_embeddings:
-                            dynamic_embeddings = identify_dynamic_embeddings(batch[0])
+                            # identify dynamic embeddings (always deleted) on first sentence
+                            if not dynamic_embeddings:
+                                dynamic_embeddings = identify_dynamic_embeddings(batch[0])
 
-                        # depending on memory mode, embeddings are moved to CPU, GPU or deleted
-                        store_embeddings(batch, embeddings_storage_mode, dynamic_embeddings)
+                            # depending on memory mode, embeddings are moved to CPU, GPU or deleted
+                            store_embeddings(batch, embeddings_storage_mode, dynamic_embeddings)
 
                     # do the optimizer step
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.0)
