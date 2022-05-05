@@ -858,7 +858,7 @@ class ModelTrainer:
                 writer.close()
 
         # test best model if test data is present
-        if self.corpus.test and not train_with_test:
+        if self.corpus.test and not train_with_test and False:
             final_score = self.final_test(
                 base_path=base_path,
                 eval_mini_batch_size=eval_batch_size,
