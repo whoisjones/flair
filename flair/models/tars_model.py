@@ -443,7 +443,8 @@ class TARSTagger(FewshotClassifier):
         else:
             task_id = set([dp.get_label("multitask_id").value for dp in data_points])
             assert len(task_id) == 1
-            self.switch_to_task(task_id.pop())
+            if not task_id.pop() == "O":
+                self.switch_to_task(task_id.pop())
 
         loss = self.tars_model.forward_loss(data_points)
         return loss
