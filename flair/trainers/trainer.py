@@ -495,8 +495,20 @@ class ModelTrainer:
                     # forward and backward for batch
                     for batch_step in batch_steps:
 
-                        # forward pass
-                        loss = self.model.forward_loss(batch_step)
+                        if not isinstance(batch_step, list):
+                            data_points = [batch_step]
+
+                        # Transform input data into TARS format
+                        batch_step = self.model._get_tars_formatted_sentences(batch_step)
+
+                        if len(batch_step) > micro_batch_size:
+                            batch_step = [batch_step[i:i + micro_batch_size] for i in range(0, len(batch_step), micro_batch_size)]
+                        else:
+                            batch_step = [batch_step]
+
+                        for mini_batch_step in batch_step:
+                            # forward pass
+                            loss = self.model.forward_loss(mini_batch_step)
 
                         if isinstance(loss, tuple):
                             average_over += loss[1]
@@ -618,8 +630,23 @@ class ModelTrainer:
 
                 if log_dev:
                     assert self.corpus.dev
+                    dev_split = []
+                    if sampler is not None:
+                        label_to_idx = {}
+                        for i in range(len(self.corpus.dev)):
+                            labels = set([label.value for label in self.corpus.dev[i].get_labels(self.model.label_type)])
+                            for label in labels:
+                                if label in label_to_idx:
+                                    label_to_idx[label].append(i)
+                                else:
+                                    label_to_idx[label] = [i]
+                        for label, ids in label_to_idx.items():
+                            random.seed(sampler.seed)
+                            dev_split.extend(self.corpus.dev[ix] for ix in random.sample(ids, sampler.k))
+                    else:
+                        dev_split = self.corpus.dev
                     dev_eval_result = self.model.evaluate(
-                        self.corpus.dev,
+                        dev_split,
                         gold_label_type=self.model.label_type,
                         mini_batch_size=eval_batch_size,
                         num_workers=num_workers,
