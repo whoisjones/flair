@@ -642,9 +642,13 @@ class ModelTrainer:
                                     label_to_idx[label] = [i]
                         for label, ids in label_to_idx.items():
                             random.seed(sampler.seed)
-                            dev_split.extend(self.corpus.dev[ix] for ix in random.sample(ids, sampler.k))
+                            if len(ids) > sampler.k:
+                                dev_split.extend(self.corpus.dev[ix] for ix in random.sample(ids, sampler.k))
+                            else:
+                                dev_split.extend(self.corpus.dev[ix] for ix in ids)
                     else:
                         dev_split = self.corpus.dev
+
                     dev_eval_result = self.model.evaluate(
                         dev_split,
                         gold_label_type=self.model.label_type,
