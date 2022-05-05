@@ -634,8 +634,23 @@ class ModelTrainer:
 
                 if log_dev:
                     assert self.corpus.dev
+                    dev_split = []
+                    if sampler is not None:
+                        label_to_idx = {}
+                        for i in range(len(self.corpus.dev)):
+                            labels = set([label.value for label in self.corpus.dev[i].get_labels(self.model.label_type)])
+                            for label in labels:
+                                if label in label_to_idx:
+                                    label_to_idx[label].append(i)
+                                else:
+                                    label_to_idx[label] = [i]
+                        for label, ids in label_to_idx.items():
+                            random.seed(sampler.seed)
+                            dev_split.extend(self.corpus.dev[ix] for ix in random.sample(ids, sampler.k))
+                    else:
+                        dev_split = self.corpus.dev
                     dev_eval_result = self.model.evaluate(
-                        self.corpus.dev,
+                        dev_split,
                         gold_label_type=self.model.label_type,
                         mini_batch_size=eval_batch_size,
                         num_workers=num_workers,
