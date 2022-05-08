@@ -25,7 +25,9 @@ def test_train_language_model(results_base_path, resources_path):
     # train the language model
     trainer: LanguageModelTrainer = LanguageModelTrainer()
 
-    trainer.train(language_model, corpus, results_base_path, test_mode=True, sequence_length=10, mini_batch_size=10, max_epochs=2)
+    trainer.train(
+        language_model, corpus, results_base_path, test_mode=True, sequence_length=10, mini_batch_size=10, max_epochs=2
+    )
 
     # use the character LM as embeddings to embed the example sentence 'I love Berlin'
     char_lm_embeddings: TokenEmbeddings = FlairEmbeddings(str(results_base_path / "best-lm.pt"))
@@ -59,7 +61,8 @@ def test_train_resume_language_model(resources_path, results_base_path, tasks_ba
     # train the language model
     trainer: LanguageModelTrainer = LanguageModelTrainer()
     trainer.train(
-        language_model, corpus,
+        language_model,
+        corpus,
         results_base_path,
         sequence_length=10,
         mini_batch_size=10,
