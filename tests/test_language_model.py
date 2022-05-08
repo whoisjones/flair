@@ -1,4 +1,5 @@
 import pytest
+import torch
 
 from flair.data import Dictionary, Sentence
 from flair.embeddings import FlairEmbeddings, TokenEmbeddings
@@ -23,7 +24,8 @@ def test_train_language_model(results_base_path, resources_path):
     )
 
     # train the language model
-    trainer: LanguageModelTrainer = LanguageModelTrainer()
+    gpus = 1 if torch.cuda.is_available() else None  # TODO: refactor after PL upgrade
+    trainer: LanguageModelTrainer = LanguageModelTrainer(gpus=gpus)
 
     trainer.train(
         language_model, corpus, results_base_path, test_mode=True, sequence_length=10, mini_batch_size=10, max_epochs=2
@@ -59,7 +61,9 @@ def test_train_resume_language_model(resources_path, results_base_path, tasks_ba
     )
 
     # train the language model
-    trainer: LanguageModelTrainer = LanguageModelTrainer()
+    gpus = 1 if torch.cuda.is_available() else None  # TODO: refactor after PL upgrade
+    trainer: LanguageModelTrainer = LanguageModelTrainer(gpus=gpus)
+
     trainer.train(
         language_model,
         corpus,
@@ -72,8 +76,13 @@ def test_train_resume_language_model(resources_path, results_base_path, tasks_ba
     )
     del trainer, language_model
 
-    language_model, trainer = LanguageModelTrainer.load_checkpoint(results_base_path / "checkpoint.pt", corpus)
-    trainer.train(language_model, corpus, results_base_path, sequence_length=10, mini_batch_size=10, max_epochs=2)
+    checkpoint = LanguageModelTrainer.load_checkpoint(results_base_path / "checkpoint.pt", corpus)
+    trainer = LanguageModelTrainer(gpus=gpus)
+    language_model = checkpoint["model"]
+    split = checkpoint["split"]
+    trainer.train(
+        language_model, corpus, results_base_path, sequence_length=10, mini_batch_size=10, max_epochs=2, split=split
+    )
 
     del trainer
 

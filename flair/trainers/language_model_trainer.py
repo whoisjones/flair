@@ -8,7 +8,7 @@ from typing import Iterable, Type, Union
 
 import torch
 from pytorch_lightning.lite import LightningLite
-from torch import cuda
+from torch import cuda, nn
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.sgd import SGD
@@ -176,7 +176,7 @@ class LanguageModelTrainer(LightningLite):
         **kwargs,
     ):
         # TODO: check if model & optimzer should be instance attribute?
-        self.model: LanguageModel = model
+        self.model: Union[LightningLite._LiteModule, LanguageModel] = model
         self.optimizer: Type[Optimizer] = optimizer
         self.corpus: TextCorpus = corpus
         self.test_mode: bool = test_mode
@@ -464,15 +464,15 @@ class LanguageModelTrainer(LightningLite):
     @staticmethod
     def load_checkpoint(
         checkpoint_file: Union[str, Path],
-        corpus: TextCorpus,
         optimizer: Type[Optimizer] = SGD,
     ):
         if type(checkpoint_file) is str:
             checkpoint_file = Path(checkpoint_file)
 
         checkpoint = LanguageModel.load_checkpoint(checkpoint_file)
-        return checkpoint["model"], LanguageModelTrainer(
-            optimizer,
+        return dict(
+            model=checkpoint["model"],
+            optimizer=optimizer,
             epoch=checkpoint["epoch"],
             split=checkpoint["split"],
             loss=checkpoint["loss"],
