@@ -13,7 +13,7 @@ dictionary: Dictionary = Dictionary.load("chars")
 # get your corpus, process forward and at the character level
 corpus = TextCorpus("provide/your/corpus/path", dictionary, is_forward_lm, character_level=True)
 
-if __name__== "__main__":
+if __name__ == "__main__":
     # instantiate your language model, set hidden size and number of layers
     language_model = LanguageModel(dictionary, is_forward_lm, hidden_size=128, nlayers=1)
 
