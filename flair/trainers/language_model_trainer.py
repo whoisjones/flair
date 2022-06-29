@@ -2,28 +2,22 @@ import datetime
 import logging
 import math
 import random
-import sys
 import time
 from pathlib import Path
 from typing import Iterable, Type, Union
 
 import torch
-from torch import cuda
+from pytorch_lightning.lite import LightningLite
+from torch import cuda, nn
 from torch.optim import AdamW, Optimizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.optim.sgd import SGD
 from torch.utils.data import DataLoader, Dataset
 
-from flair.optim import SGDW, ReduceLRWDOnPlateau
-
-try:
-    from apex import amp
-except ImportError:
-    amp = None
-
 import flair
 from flair.data import Dictionary
 from flair.models import LanguageModel
+from flair.optim import SGDW, ReduceLRWDOnPlateau
 from flair.training_utils import add_file_handler
 
 log = logging.getLogger("flair")
@@ -157,31 +151,59 @@ class TextCorpus(object):
         )[0]
 
 
-class LanguageModelTrainer:
-    def __init__(
+class LanguageModelTrainer(LightningLite):
+    def train(
         self,
         model: LanguageModel,
         corpus: TextCorpus,
+        base_path: Union[Path, str],
+        sequence_length: int,
         optimizer: Type[Optimizer] = SGD,
         test_mode: bool = False,
-        epoch: int = 0,
         split: int = 0,
         loss: float = 10000,
         optimizer_state: dict = None,
+        learning_rate: float = 20,
+        mini_batch_size: int = 100,
+        anneal_factor: float = 0.25,
+        patience: int = 10,
+        clip=0.25,
+        initial_epoch: int = 0,
+        max_epochs: int = 1000,
+        checkpoint: bool = False,
+        grow_to_sequence_length: int = 0,
+        num_workers: int = 2,
+        **kwargs,
     ):
-        self.model: LanguageModel = model
+        # TODO: check if model & optimzer should be instance attribute?
+        self.model: Union[LightningLite._LiteModule, LanguageModel] = model
         self.optimizer: Type[Optimizer] = optimizer
         self.corpus: TextCorpus = corpus
         self.test_mode: bool = test_mode
 
         self.loss_function = torch.nn.CrossEntropyLoss()
         self.log_interval = 100
-        self.epoch = epoch
         self.split = split
         self.loss = loss
         self.optimizer_state = optimizer_state
 
-    def train(
+        self.run(
+            base_path=base_path,
+            sequence_length=sequence_length,
+            learning_rate=learning_rate,
+            mini_batch_size=mini_batch_size,
+            anneal_factor=anneal_factor,
+            patience=patience,
+            clip=clip,
+            initial_epoch=initial_epoch,
+            max_epochs=max_epochs,
+            checkpoint=checkpoint,
+            grow_to_sequence_length=grow_to_sequence_length,
+            num_workers=num_workers,
+            **kwargs,
+        )
+
+    def run(
         self,
         base_path: Union[Path, str],
         sequence_length: int,
@@ -190,25 +212,14 @@ class LanguageModelTrainer:
         anneal_factor: float = 0.25,
         patience: int = 10,
         clip=0.25,
+        initial_epoch: int = 0,
         max_epochs: int = 1000,
         checkpoint: bool = False,
         grow_to_sequence_length: int = 0,
         num_workers: int = 2,
-        use_amp: bool = False,
-        amp_opt_level: str = "O1",
         **kwargs,
     ):
-
-        if use_amp:
-            if sys.version_info < (3, 0):
-                raise RuntimeError("Apex currently only supports Python 3. Aborting.")
-            if amp is None:
-                raise RuntimeError(
-                    "Failed to import apex. Please install apex from "
-                    "https://www.github.com/nvidia/apex "
-                    "to enable mixed-precision training."
-                )
-
+        flair.device = self.device
         # cast string to Path
         base_path = Path(base_path)
 
@@ -244,18 +255,19 @@ class LanguageModelTrainer:
             else:
                 scheduler = ReduceLROnPlateau(optimizer, verbose=True, factor=anneal_factor, patience=patience)
 
-            if use_amp:
-                self.model, optimizer = amp.initialize(self.model, optimizer, opt_level=amp_opt_level)
+            self.model, optimizer = self.setup(self.model, optimizer)
 
             training_generator = DataLoader(self.corpus.train, shuffle=False, num_workers=num_workers)
+            training_generator = self.setup_dataloaders(training_generator)
 
-            for epoch in range(self.epoch, max_epochs):
+            for epoch in range(initial_epoch, max_epochs):
                 epoch_start_time = time.time()
                 # Shuffle training files randomly after serially iterating
                 # through corpus one
                 if epoch > 0:
                     training_generator = DataLoader(self.corpus.train, shuffle=True, num_workers=num_workers)
-                    self.model.save_checkpoint(
+                    training_generator = self.setup_dataloaders(training_generator)
+                    self.model.module.save_checkpoint(
                         base_path / f"epoch_{epoch}.pt",
                         optimizer,
                         epoch,
@@ -285,12 +297,12 @@ class LanguageModelTrainer:
                     self.model.train()
 
                     # reset variables
-                    hidden = self.model.init_hidden(mini_batch_size)
+                    hidden = self.model.module.init_hidden(mini_batch_size)
 
                     # not really sure what this does
                     ntokens = len(self.corpus.dictionary)
 
-                    total_loss = torch.zeros(1, device=flair.device)
+                    total_loss = torch.zeros(1, device=self.device)
                     start_time = time.time()
 
                     for batch, i in enumerate(range(0, train_data.size(0) - 1, sequence_length)):
@@ -304,16 +316,12 @@ class LanguageModelTrainer:
                         optimizer.zero_grad()
 
                         # do the forward pass in the model
-                        output, rnn_output, hidden = self.model.forward(data, hidden)
+                        output, rnn_output, hidden = self.model(data, hidden)
 
                         # try to predict the targets
                         loss = self.loss_function(output.view(-1, ntokens), targets)
                         # Backward
-                        if use_amp:
-                            with amp.scale_loss(loss, optimizer) as scaled_loss:
-                                scaled_loss.backward()
-                        else:
-                            loss.backward()
+                        self.backward(loss)
 
                         # `clip_grad_norm` helps prevent the exploding gradient
                         # problem in RNNs / LSTMs.
@@ -339,7 +347,7 @@ class LanguageModelTrainer:
                                 f"| split {curr_split:3d}/{number_of_splits:3d} | {batch:5d}/{len(train_data) // sequence_length:5d} batches "
                                 f"| ms/batch {elapsed * 1000 / self.log_interval:5.2f} | loss {cur_loss:5.4f} | ppl {math.exp(cur_loss):5.4f}"
                             )
-                            total_loss = torch.zeros(1, device=flair.device)
+                            total_loss = torch.zeros(1, device=self.device)
                             start_time = time.time()
 
                     ##########################################################
@@ -350,7 +358,7 @@ class LanguageModelTrainer:
                     # Save the model if the validation loss is the best we've
                     # seen so far.
                     if val_loss < best_val_loss:
-                        self.model.save(savefile)
+                        self.model.module.save(savefile)
                         best_val_loss = val_loss
                         log.info("best split so far")
 
@@ -358,10 +366,10 @@ class LanguageModelTrainer:
 
                     log.info(f"best loss so far {best_val_loss:5.8f}")
 
-                    log.info(self.model.generate_text())
+                    log.info(self.model.module.generate_text())
 
                     if checkpoint:
-                        self.model.save_checkpoint(
+                        self.model.module.save_checkpoint(
                             base_path / "checkpoint.pt",
                             optimizer,
                             epoch,
@@ -418,14 +426,16 @@ class LanguageModelTrainer:
             total_loss = 0
             ntokens = len(self.corpus.dictionary)
 
-            hidden = self.model.init_hidden(eval_batch_size)
+            hidden = self.model.module.init_hidden(eval_batch_size)
 
             for i in range(0, data_source.size(0) - 1, sequence_length):
                 data, targets = self._get_batch(data_source, i, sequence_length)
-                prediction, rnn_output, hidden = self.model.forward(data, hidden)
+
+                prediction, rnn_output, hidden = self.model(data, hidden)
                 output_flat = prediction.view(-1, ntokens)
                 total_loss += len(data) * self.loss_function(output_flat, targets).data
                 hidden = self._repackage_hidden(hidden)
+            total_loss = self.all_gather(total_loss).mean()
             return total_loss.item() / len(data_source)
 
     @staticmethod
@@ -438,15 +448,11 @@ class LanguageModelTrainer:
         data = data.view(batch_size, -1).t().contiguous()
         return data
 
-    @staticmethod
-    def _get_batch(source, i, sequence_length):
+    def _get_batch(self, source, i, sequence_length):
         seq_len = min(sequence_length, len(source) - 1 - i)
 
-        data = source[i : i + seq_len]
-        target = source[i + 1 : i + 1 + seq_len].view(-1)
-
-        data = data.to(flair.device)
-        target = target.to(flair.device)
+        data = source[i : i + seq_len].to(self.device)
+        target = source[i + 1 : i + 1 + seq_len].view(-1).to(self.device)
 
         return data, target
 
@@ -458,17 +464,15 @@ class LanguageModelTrainer:
     @staticmethod
     def load_checkpoint(
         checkpoint_file: Union[str, Path],
-        corpus: TextCorpus,
         optimizer: Type[Optimizer] = SGD,
     ):
         if type(checkpoint_file) is str:
             checkpoint_file = Path(checkpoint_file)
 
         checkpoint = LanguageModel.load_checkpoint(checkpoint_file)
-        return LanguageModelTrainer(
-            checkpoint["model"],
-            corpus,
-            optimizer,
+        return dict(
+            model=checkpoint["model"],
+            optimizer=optimizer,
             epoch=checkpoint["epoch"],
             split=checkpoint["split"],
             loss=checkpoint["loss"],

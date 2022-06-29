@@ -471,3 +471,4 @@ class LanguageModel(nn.Module):
                 setattr(child_module, "_flat_weights_names", _flat_weights_names)
 
             child_module._apply(fn)
+        return self
