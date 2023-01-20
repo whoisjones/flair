@@ -1,0 +1,63 @@
+import argparse
+from flair.models import TARSTagger, FewshotClassifier
+from flair.datasets import ColumnCorpus
+from flair.trainers import ModelTrainer
+import flair
+
+from local_domain_extension_label_name_map import get_corpus
+
+def main(args):
+    flair.set_seed(args.seed)
+
+    if args.cuda:
+        flair.device = f"cuda:{args.cuda_device}"
+
+    full_conll = get_corpus(name="conll", map="short", path=args.cache_path)
+
+    for split in range(5):
+        try:
+            tars_tagger: FewshotClassifier = TARSTagger.load(
+                f"{args.cache_path}/flair-models/pretrained-few-shot/{args.transformer}_{args.corpus}_{args.lr}-{args.seed}/final-model.pt")
+        except:
+            raise FileNotFoundError(
+                f"{args.cache_path}/flair-models/pretrained-few-shot/{args.transformer}_{args.corpus}_{args.lr}-{args.seed}/final-model.pt - has this model been trained?")
+
+        support_set = ColumnCorpus(data_folder="data/fewshot/conll03/", train_file=f"{split}.txt", sample_missing_splits=False, column_format={0: "text", 1: "ner"})
+        print(support_set)
+
+        dictionary = support_set.make_label_dictionary('ner')
+        print(dictionary)
+
+        tars_tagger.add_and_switch_to_new_task(task_name="fewshot-conll-short",
+                                           label_dictionary=dictionary,
+                                           label_type="ner",
+                                           force_switch=True)
+
+        trainer = ModelTrainer(tars_tagger, support_set)
+
+        trainer.fine_tune(
+            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.corpus}_{args.lr}-{args.seed}',
+            learning_rate=args.lr,
+            mini_batch_size=args.bs,
+            mini_batch_chunk_size=args.mbs,
+            train_with_dev=False,
+            monitor_test=False,
+            save_final_model=False
+            )
+
+        result = tars_tagger.evaluate(data_points=full_conll.test, gold_label_type="ner")
+        print("done")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cuda", type=bool, default=True)
+    parser.add_argument("--cuda_device", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--cache_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon")
+    parser.add_argument("--corpus", type=str, default="ontonotes")
+    parser.add_argument("--transformer", type=str, default="xlm-roberta-large")
+    parser.add_argument("--lr", type=float, default=5e-6)
+    parser.add_argument("--bs", type=int, default=4)
+    parser.add_argument("--mbs", type=int, default=2)
+    args = parser.parse_args()
+    main(args)
