@@ -41,7 +41,7 @@ def main(args):
         trainer = ModelTrainer(tars_tagger, support_set)
 
         trainer.fine_tune(
-            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.fewshot_corpus}_{args.lr}-{args.seed}/split_{split}',
+            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.fewshot_corpus}_{args.lr}-{args.seed}/{args.k}shot/split_{split}',
             learning_rate=args.lr,
             mini_batch_size=args.bs,
             mini_batch_chunk_size=args.mbs,
