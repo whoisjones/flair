@@ -48,7 +48,7 @@ def main(args):
             train_with_dev=False,
             monitor_test=False,
             save_final_model=False,
-            max_epochs=50
+            max_epochs=30
             )
 
         result = tars_tagger.evaluate(data_points=full_conll.test, gold_label_type="ner")
