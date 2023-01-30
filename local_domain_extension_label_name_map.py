@@ -3,7 +3,7 @@ from flair.datasets import CONLL_03, ColumnCorpus, WNUT_17
 
 
 def get_corpus(name: str, map: str = "short", path: str = "/") -> Corpus:
-    if name == "conll":
+    if name == "conll03":
 
         if map == "short":
             return CONLL_03(
@@ -82,7 +82,7 @@ def get_corpus(name: str, map: str = "short", path: str = "/") -> Corpus:
                 },
             )
 
-    if name == "wnut_17":
+    if name == "wnut17":
         if map == "short":
             return WNUT_17(
                 label_name_map={
@@ -106,3 +106,25 @@ def get_corpus(name: str, map: str = "short", path: str = "/") -> Corpus:
                     "group": "name of music band, sports team or non-corporate organization",
                 }
             )
+
+
+def get_label_name_map(corpus: str):
+    if corpus == "conll03":
+        label_name_map = {
+                    "LOC": "location",
+                    "ORG": "organization",
+                    "PER": "person",
+                    "MISC": "miscellaneous",
+                }
+    elif corpus == "wnut17":
+        label_name_map = {
+                "location": "Location",
+                "corporation": "Corporation",
+                "person": "Person",
+                "creative-work": "Creative Work",
+                "product": "Product",
+                "group": "Group",
+            }
+    else:
+        raise Exception("unknown corpus")
+    return label_name_map
