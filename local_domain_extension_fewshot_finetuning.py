@@ -12,7 +12,7 @@ def main(args):
     if args.cuda:
         flair.device = f"cuda:{args.cuda_device}"
 
-    full_conll = get_corpus(name="conll", map="short", path=args.cache_path)
+    full_conll = get_corpus(name="conll03", map="short", path=args.cache_path)
     average_over_support_sets = []
     for split in range(args.splits):
         try:
