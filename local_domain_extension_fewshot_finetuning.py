@@ -75,6 +75,7 @@ if __name__ == "__main__":
     parser.add_argument("--cache_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon")
     parser.add_argument("--corpus", type=str, default="ontonotes")
     parser.add_argument("--transformer", type=str, default="xlm-roberta-large")
+    parser.add_argument("--shot", type=int, default=1)
     parser.add_argument("--lr", type=float, default=5e-6)
     parser.add_argument("--bs", type=int, default=4)
     parser.add_argument("--mbs", type=int, default=2)
