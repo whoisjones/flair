@@ -17,10 +17,10 @@ def main(args):
     for split in range(args.splits):
         try:
             tars_tagger: FewshotClassifier = TARSTagger.load(
-                f"{args.cache_path}/flair-models/pretrained-few-shot/{args.transformer}_{args.corpus}_{args.lr}-{args.seed}/final-model.pt")
+                f"{args.cache_path}/flair-models/pretrained-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.lr}-{args.seed}/final-model.pt")
         except:
             raise FileNotFoundError(
-                f"{args.cache_path}/flair-models/pretrained-few-shot/{args.transformer}_{args.corpus}_{args.lr}-{args.seed}/final-model.pt - has this model been trained?")
+                f"{args.cache_path}/flair-models/pretrained-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.lr}-{args.seed}/final-model.pt - has this model been trained?")
 
         support_set = ColumnCorpus(
             data_folder=f"data/fewshot/{args.corpus}/{args.k}shot",
@@ -68,7 +68,8 @@ if __name__ == "__main__":
     parser.add_argument("--cuda_device", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cache_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon")
-    parser.add_argument("--corpus", type=str, default="conll03")
+    parser.add_argument("--pretraining_corpus", type=str, default="ontonotes")
+    parser.add_argument("--fewshot_corpus", type=str, default="conll03")
     parser.add_argument("--transformer", type=str, default="xlm-roberta-large")
     parser.add_argument("--k", type=int, default=1)
     parser.add_argument("--splits", type=int, default=5)
