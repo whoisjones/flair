@@ -23,11 +23,11 @@ def main(args):
                 f"{args.cache_path}/flair-models/pretrained-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.lr}-{args.seed}/final-model.pt - has this model been trained?")
 
         support_set = ColumnCorpus(
-            data_folder=f"data/fewshot/{args.corpus}/{args.k}shot",
+            data_folder=f"data/fewshot/{args.fewshot_corpus}/{args.k}shot",
             train_file=f"{split}.txt",
             sample_missing_splits=False,
             column_format={0: "text", 1: "ner"},
-            label_name_map=get_label_name_map(args.corpus))
+            label_name_map=get_label_name_map(args.fewshot_corpus))
         print(support_set)
 
         dictionary = support_set.make_label_dictionary('ner')
@@ -41,7 +41,7 @@ def main(args):
         trainer = ModelTrainer(tars_tagger, support_set)
 
         trainer.fine_tune(
-            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.corpus}_{args.lr}-{args.seed}/split_{split}',
+            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.fewshot_corpus}_{args.lr}-{args.seed}/split_{split}',
             learning_rate=args.lr,
             mini_batch_size=args.bs,
             mini_batch_chunk_size=args.mbs,
@@ -52,13 +52,13 @@ def main(args):
             )
 
         result = tars_tagger.evaluate(data_points=full_conll.test, gold_label_type="ner")
-        with open(f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.corpus}_{args.lr}-{args.seed}/split_{split}/result.txt', "w") as f:
+        with open(f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.fewshot_corpus}_{args.lr}-{args.seed}/split_{split}/result.txt', "w") as f:
             f.write(result.detailed_results)
 
         average_over_support_sets.append(result.main_score)
 
     with open(
-            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.corpus}_{args.lr}-{args.seed}/average_result.txt',
+            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.fewshot_corpus}_{args.lr}-{args.seed}/average_result.txt',
             "w") as f:
         f.write(f"average micro f1: {(sum(average_over_support_sets) / len(average_over_support_sets))}")
 
