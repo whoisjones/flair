@@ -52,13 +52,13 @@ def main(args):
             )
 
         result = tars_tagger.evaluate(data_points=full_conll.test, gold_label_type="ner")
-        with open(f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.fewshot_corpus}_{args.lr}-{args.seed}/split_{split}/result.txt', "w") as f:
+        with open(f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.fewshot_corpus}_{args.lr}-{args.seed}/{args.k}shot/split_{split}/result.txt', "w") as f:
             f.write(result.detailed_results)
 
         average_over_support_sets.append(result.main_score)
 
     with open(
-            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.fewshot_corpus}_{args.lr}-{args.seed}/average_result.txt',
+            f'{args.cache_path}/flair-models/finetuned-few-shot/{args.transformer}_{args.pretraining_corpus}_{args.fewshot_corpus}_{args.lr}-{args.seed}/{args.k}shot/average_result.txt',
             "w") as f:
         f.write(f"average micro f1: {(sum(average_over_support_sets) / len(average_over_support_sets))}")
 
