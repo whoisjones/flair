@@ -41,5 +41,6 @@ if __name__ == "__main__":
     parser.add_argument("--pretraining_corpus", type=str, default="ontonotes")
     parser.add_argument("--fewshot_corpus", type=str, default="conll03")
     parser.add_argument("--transformer", type=str, default="xlm-roberta-large")
+    parser.add_argument("--lr", type=float, default=5e-6)
     args = parser.parse_args()
     main(args)
