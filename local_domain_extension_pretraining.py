@@ -12,7 +12,7 @@ def main(args):
         flair.device = f"cuda:{args.cuda_device}"
 
     tars_tagger: FewshotClassifier = TARSTagger(
-        embeddings='xlm-roberta-large',
+        embeddings=args.transformer,
         num_negative_labels_to_sample=1,
         prefix=True,
     )
@@ -23,7 +23,7 @@ def main(args):
     dictionary = corpus.make_label_dictionary('ner')
     print(dictionary)
 
-    tars_tagger.add_and_switch_to_new_task(task_name="ontonotes-short",
+    tars_tagger.add_and_switch_to_new_task(task_name="pretraining-short",
                                            label_dictionary=dictionary,
                                            label_type="ner",
                                            force_switch=True)
