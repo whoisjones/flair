@@ -1,8 +1,13 @@
 import argparse
 from pathlib import Path
 import random
+import json
+import copy
+import itertools
 from typing import List
 
+import numpy as np
+import torch
 import torch.cuda
 
 import flair
@@ -18,6 +23,7 @@ from flair.training_utils import store_embeddings
 from torch.utils.data.dataset import Subset
 
 from local_loner import LONER
+from local_corpora import get_masked_fewnerd_corpus
 
 class BatchedLabelVerbalizerDecoder(torch.nn.Module):
     def __init__(self, label_embedding: Embeddings, label_dictionary: Dictionary, requires_masking: bool, mask_size: int = 128):
@@ -123,28 +129,101 @@ def train(args):
         save_model_each_k_epochs=1,
     )
 
-def eval(model_path):
-    #model_path = "/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder/bert-base-uncased_LONER_1e-05-123/model_epoch_3.pt"
-    corpus = CONLL_03(
-        column_format={0: "text", 1: "pos", 2: "chunk", 3: "ner"},
-        label_name_map={"PER": "person", "LOC": "location", "ORG": "organization", "MISC": "miscellaneous"},
+def eval(args):
+    flair.device = f"cuda:{args.cuda_device}"
+
+    save_base_path = Path(
+        f"{args.cache_path}/fewshot-dual-encoder/masked-models/"
+        f"{args.transformer}"
+        f"_fewnerd-{args.fewnerd_granularity}"
+        f"_pretrained-on-{args.pretrained_model_path.split('/')[-2].split('_', 1)[-1]}"
+        f"_{args.lr}"
+        f"{'_early-stopping' if args.early_stopping else ''}"
     )
-    label_dict = corpus.make_label_dictionary(label_type="ner", add_unk=False)
 
-    # Load model and create new label dictionary
-    model = TokenClassifier.load(model_path)
-    decoder_dict = TokenClassifier._create_internal_label_dictionary(label_dict, "BIO")
-    decoder_dict.span_labels = True
+    with open(f"data/fewshot_masked-fewnerd-{args.fewnerd_granularity}.json", "r") as f:
+        fewshot_indices = json.load(f)
 
-    # Set the new label_dictionary in the decoder and disable masking
-    model.decoder.verbalized_labels = model.decoder.verbalize_labels(decoder_dict)
-    model.decoder.requires_masking = False
-    # Also set the label_dictionary in the model itself for evaluation
-    model.label_dictionary = decoder_dict
+    for pretraining_seed in [10, 20, 30, 40, 50]:
 
-    # Evaluate
-    results = model.evaluate(corpus.test, "ner")
-    print(results.detailed_results)
+        base_corpus, kept_labels = get_masked_fewnerd_corpus(
+            pretraining_seed, args.fewnerd_granularity, inverse_mask=True
+        )
+
+        results = {}
+        for k in args.k:
+            results[f"{k}"] = {"results": []}
+            for seed in range(5):
+                flair.set_seed(seed)
+                corpus = copy.copy(base_corpus)
+                if k != 0:
+                    corpus._train = Subset(base_corpus._train, fewshot_indices[f"{k}-{pretraining_seed}-{seed}"])
+                else:
+                    pass
+                corpus._dev = Subset(base_corpus._train, [])
+
+                tag_type = "ner"
+                label_dictionary = corpus.make_label_dictionary(tag_type, add_unk=False)
+
+                model = TokenClassifier.load(args.pretrained_model_path)
+                decoder_dict = TokenClassifier._create_internal_label_dictionary(label_dictionary,  args.span_encoding)
+                decoder_dict.span_labels = True
+
+                # Set the new label_dictionary in the decoder and disable masking
+                model.decoder.verbalized_labels = model.decoder.verbalize_labels(decoder_dict)
+                model.decoder.requires_masking = False
+                # Also set the label_dictionary in the model itself for evaluation
+                model.label_dictionary = decoder_dict
+                model.span_encoding = args.span_encoding
+
+                if k > 0:
+                    trainer = ModelTrainer(model, corpus)
+
+                    save_path = save_base_path / f"{k}shot_{pretraining_seed}_{seed}"
+
+                    # 7. run fine-tuning
+                    result = trainer.train(
+                        save_path,
+                        learning_rate=args.lr,
+                        mini_batch_size=args.bs,
+                        mini_batch_chunk_size=args.mbs,
+                        max_epochs=args.epochs,
+                        optimizer=torch.optim.AdamW,
+                        train_with_dev=args.early_stopping,
+                        min_learning_rate=args.min_lr if args.early_stopping else 0.001,
+                        save_final_model=False,
+                    )
+
+                    results[f"{k}"]["results"].append(result["test_score"])
+                else:
+                    save_path = save_base_path / f"{k}shot_{pretraining_seed}_{seed}"
+                    import os
+
+                    if not os.path.exists(save_path):
+                        os.mkdir(save_path)
+
+                    decoder_dict = TokenClassifier._create_internal_label_dictionary(label_dictionary, args.span_encoding)
+                    decoder_dict.span_labels = True
+
+                    # Set the new label_dictionary in the decoder and disable masking
+                    model.decoder.verbalized_labels = model.decoder.verbalize_labels(decoder_dict)
+                    model.decoder.requires_masking = False
+                    # Also set the label_dictionary in the model itself for evaluation
+                    model.label_dictionary = decoder_dict
+
+                    result = model.evaluate(corpus.test, "ner", out_path=save_path / "predictions.txt")
+                    results[f"{k}"]["results"].append(result.main_score)
+                    with open(save_path / "result.txt", "w") as f:
+                        f.write(result.detailed_results)
+
+    def postprocess_scores(scores: dict):
+        rounded_scores = [round(float(score) * 100, 2) for score in scores["results"]]
+        return {"results": rounded_scores, "average": np.mean(rounded_scores), "std": np.std(rounded_scores)}
+
+    results = {setting: postprocess_scores(result) for setting, result in results.items()}
+
+    with open(save_base_path / "results.json", "w") as f:
+        json.dump(results, f)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -160,8 +239,15 @@ if __name__ == "__main__":
     parser.add_argument("--bs", type=int, default=4)
     parser.add_argument("--mbs", type=int, default=2)
     parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--early_stopping", action="store_true")
+    parser.add_argument("--min_lr", type=float, default=1e-7)
+    parser.add_argument("--anneal_factor", type=float, default=0.5)
+    parser.add_argument("--fewnerd_granularity", type=str, default="coarse")
+    parser.add_argument("--k", type=int, default=1, nargs="+")
+    parser.add_argument("--pretrained_model_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder/bert-base-uncased_LONER_lr-1e-05_seed-123_mask-128_size-100k/model_epoch_3.pt")
     args = parser.parse_args()
 
-    train(args)
-    #eval()
+    #train(args)
+    eval(args)
+
 
