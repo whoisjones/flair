@@ -104,9 +104,10 @@ def train(args):
     corpus = LONER(base_path=args.dataset_path)
 
     # Downsample corpus to either 100k or 1M samples
-    samples = 100000 if args.corpus_size =="100k" else 1000000
-    indices = random.sample(range(len(corpus.train)), k=samples)
-    corpus._train = Subset(corpus._train, indices)
+    if not args.corpus_size == "full":
+        samples = 100000 if args.corpus_size =="100k" else 1000000
+        indices = random.sample(range(len(corpus.train)), k=samples)
+        corpus._train = Subset(corpus._train, indices)
 
     # Create label dictionary and decoder. The decoder needs the label dictionary using BIO encoding from TokenClassifier.
     label_dict = corpus.make_label_dictionary(label_type=label_type, add_unk=False)
@@ -227,6 +228,8 @@ def eval(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--do_train", action="store_true")
+    parser.add_argument("--do_eval", action="store_true")
     parser.add_argument("--cuda_device", type=int, default=0)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--cache_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models")
@@ -247,7 +250,7 @@ if __name__ == "__main__":
     parser.add_argument("--pretrained_model_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder/bert-base-uncased_LONER_lr-1e-05_seed-123_mask-128_size-100k/model_epoch_3.pt")
     args = parser.parse_args()
 
-    #train(args)
-    eval(args)
-
-
+    if args.do_train:
+        train(args)
+    if args.do_eval:
+        eval(args)
