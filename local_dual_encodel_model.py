@@ -176,14 +176,20 @@ def train_flair(args):
 
 def train_hf(args):
 
+    is_zelda = True if "ZELDA" in args.dataset_path else False
+
     save_base_path = Path(
         f"{args.cache_path}/pretrained-dual-encoder-hf/"
         f"{args.transformer}"
-        f"_LONER_lr-{args.lr}_seed-{args.seed}_mask-{args.mask_size}_size-{args.corpus_size}"
+        f"_LONER{'-ZELDA' if is_zelda else ''}"
+        f"_lr-{args.lr}"
+        f"_seed-{args.seed}"
+        f"_mask-{args.mask_size}"
+        f"_size-{args.corpus_size}"
     )
 
     pl.seed_everything(args.seed)
-    dataset = load_dataset("json", data_files=glob.glob("/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/jsonl_bio/*"))
+    dataset = load_dataset("json", data_files=glob.glob(f'{args.dataset_path}/*'))
     if not args.corpus_size == "full":
         if args.corpus_size == "100k":
             num_samples = 100000
