@@ -176,7 +176,7 @@ def train_flair(args):
 
 def train_hf(args):
 
-    is_zelda = True if "ZELDA" in args.dataset_path else False
+    is_zelda = True if "zelda" in args.dataset_path.lower() else False
 
     save_base_path = Path(
         f"{args.cache_path}/pretrained-dual-encoder-hf/"
