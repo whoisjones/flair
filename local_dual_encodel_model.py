@@ -30,7 +30,7 @@ from torch.utils.data.dataset import Subset
 from local_loner import LONER
 from local_corpora import get_masked_fewnerd_corpus
 
-class MemoryEfficientLabelVerbalizerDecoder(torch.nn.Module):
+class BatchedLabelVerbalizerDecoder(torch.nn.Module):
     def __init__(self, label_embedding: Embeddings, label_dictionary: Dictionary, requires_masking: bool, mask_size: int = 128):
         super().__init__()
         self.label_embedding = label_embedding
@@ -108,8 +108,11 @@ class HfDualEncoder(torch.nn.Module):
         np_labels = labels.detach().cpu().numpy()
         unique_labels = np.unique(np.clip(np_labels, a_min=0, a_max=None))
         additional_ids_needed = self.mask_size - unique_labels.shape[0]
-        sampled_labels = numpy.random.choice(np.arange(0, len(self.labels)), size=additional_ids_needed, replace=False)
-        selected_labels = np.unique(np.concatenate([unique_labels, sampled_labels]))
+        if additional_ids_needed > 0:
+            sampled_labels = numpy.random.choice(np.arange(0, len(self.labels)), size=additional_ids_needed, replace=False)
+            selected_labels = np.unique(np.concatenate([unique_labels, sampled_labels]))
+        else:
+            selected_labels = unique_labels
         label_description = [self.labels[i] for i in selected_labels]
         encoded_labels = self.tokenizer(label_description, padding=True, truncation=True, max_length=64, return_tensors="pt").to(labels.device)
         return encoded_labels, selected_labels
@@ -296,18 +299,18 @@ def eval_fewshot_fewnerd(args):
     flair.device = f"cuda:{args.cuda_device}"
 
     save_base_path = Path(
-        f"{args.cache_path}/fewshot-dual-encoder/masked-models/"
-        f"{args.transformer}"
-        f"_fewnerd-{args.fewnerd_granularity}"
-        f"_pretrained-on-{args.pretrained_model_path.split('/')[-2].split('_', 1)[-1]}"
+        f"{args.cache_path}/fewshot-loner/"
+        f"fewshot-fewnerd-{args.fewnerd_granularity}"
         f"_{args.lr}"
         f"{'_early-stopping' if args.early_stopping else ''}"
+        f"_pretrained-on-{args.pretrained_model_path.split('/')[-2].split('_', 1)[-1]}"
+        f"-epoch-{args.pretrained_model_path.split('/')[-1].split('_')[-1].replace('.pt', '')}"
     )
 
     with open(f"data/fewshot_masked-fewnerd-{args.fewnerd_granularity}.json", "r") as f:
         fewshot_indices = json.load(f)
 
-    for pretraining_seed in [10, 20, 30, 40, 50]:
+    for pretraining_seed in args.pretraining_seeds:
 
         base_corpus, kept_labels = get_masked_fewnerd_corpus(
             pretraining_seed, args.fewnerd_granularity, inverse_mask=True
@@ -353,7 +356,7 @@ def eval_fewshot_fewnerd(args):
                         max_epochs=args.epochs,
                         optimizer=torch.optim.AdamW,
                         train_with_dev=args.early_stopping,
-                        min_learning_rate=args.min_lr if args.early_stopping else 0.001,
+                        min_learning_rate=args.lr * 1e-2 if args.early_stopping else 0.001,
                         save_final_model=False,
                     )
 
@@ -388,13 +391,98 @@ def eval_fewshot_fewnerd(args):
     with open(save_base_path / "results.json", "w") as f:
         json.dump(results, f)
 
+def find_hyperparameters(args):
+    flair.device = f"cuda:{args.cuda_device}"
+
+    save_base_path = Path(
+        f"{args.cache_path}/fewshot-loner-hyperparams/"
+        f"fewshot-fewnerd-{args.fewnerd_granularity}"
+        f"_{args.lr}"
+        f"{'_early-stopping' if args.early_stopping else ''}"
+        f"_pretrained-on-{args.pretrained_model_path.split('/')[-2].split('_', 1)[-1]}"
+        f"-epoch-{args.pretrained_model_path.split('/')[-1].split('_')[-1].replace('.pt', '')}"
+    )
+
+    with open(f"data/fewshot_masked-fewnerd-{args.fewnerd_granularity}.json", "r") as f:
+        fewshot_indices = json.load(f)
+
+    results = {}
+
+    for pretraining_seed in args.pretraining_seeds:
+
+        base_corpus, kept_labels = get_masked_fewnerd_corpus(
+            pretraining_seed, args.fewnerd_granularity, inverse_mask=True
+        )
+
+        model_paths = [
+            "/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-100k/model_epoch_1.pt",
+            "/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-100k/model_epoch_2.pt",
+            "/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-100k/model_epoch_3.pt"
+        ]
+
+        for path in model_paths:
+            for k in args.k:
+                for lr in [5e-3, 1e-4, 5e-4, 1e-5, 5e-5, 1e-6, 5e-6]:
+                    for seed in range(2):
+                        flair.set_seed(seed)
+                        corpus = copy.copy(base_corpus)
+                        if k != 0:
+                            corpus._train = Subset(base_corpus._train, fewshot_indices[f"{k}-{pretraining_seed}-{seed}"])
+                        else:
+                            pass
+                        corpus._dev = Subset(base_corpus._train, [])
+
+                        tag_type = "ner"
+                        label_dictionary = corpus.make_label_dictionary(tag_type, add_unk=False)
+
+                        model = TokenClassifier.load(path)
+                        decoder_dict = TokenClassifier._create_internal_label_dictionary(label_dictionary,  args.span_encoding)
+                        decoder_dict.span_labels = True
+
+                        # Set the new label_dictionary in the decoder and disable masking
+                        model.decoder.verbalized_labels = model.decoder.verbalize_labels(decoder_dict)
+                        model.decoder.requires_masking = False
+                        # Also set the label_dictionary in the model itself for evaluation
+                        model.label_dictionary = decoder_dict
+                        model.span_encoding = args.span_encoding
+
+                        trainer = ModelTrainer(model, corpus)
+
+                        save_path = save_base_path / f"{k}shot_{pretraining_seed}_{seed}"
+
+                        # 7. run fine-tuning
+                        result = trainer.train(
+                            save_path,
+                            learning_rate=lr,
+                            mini_batch_size=args.bs,
+                            mini_batch_chunk_size=args.mbs,
+                            max_epochs=args.epochs,
+                            optimizer=torch.optim.AdamW,
+                            train_with_dev=args.early_stopping,
+                            min_learning_rate=args.lr * 1e-2 if args.early_stopping else 0.001,
+                            save_final_model=False,
+                        )
+
+                        model_path_identifier = path.split("/")[-2]
+                        key = f"{model_path_identifier}-{lr}"
+                        if not key in results:
+                            results[key] = [round(result["test_score"] * 100, 2)]
+                        else:
+                            results[key].append(round(result["test_score"] * 100, 2))
+
+    with open("hyperparam_results.json", "w") as f:
+        json.dump(results, f)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_flair", action="store_true")
     parser.add_argument("--train_hf", action="store_true")
     parser.add_argument("--do_eval_fewshot_fewnerd", action="store_true")
+    parser.add_argument("--find_hyperparameters", action="store_true")
     parser.add_argument("--cuda_device", type=int, default=0)
     parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--pretraining_seeds", type=int, nargs="+", default=[10])
     parser.add_argument("--cache_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models")
     parser.add_argument("--dataset_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/datasets/loner")
     parser.add_argument("--span_encoding", type=str, default="BIO")
@@ -406,7 +494,6 @@ if __name__ == "__main__":
     parser.add_argument("--mbs", type=int, default=2)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--early_stopping", action="store_true")
-    parser.add_argument("--min_lr", type=float, default=1e-7)
     parser.add_argument("--anneal_factor", type=float, default=0.5)
     parser.add_argument("--fewnerd_granularity", type=str, default="coarse")
     parser.add_argument("--k", type=int, default=1, nargs="+")
@@ -419,3 +506,5 @@ if __name__ == "__main__":
         train_hf(args)
     if args.do_eval_fewshot_fewnerd:
         eval_fewshot_fewnerd(args)
+    if args.find_hyperparameters:
+        find_hyperparameters(args)
