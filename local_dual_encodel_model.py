@@ -317,7 +317,7 @@ def train_fewshot(args):
 
         for k in args.k:
             results[f"{k}-{pretraining_seed}"] = {"results": []}
-            for seed in range(3):
+            for seed in range(1):
                 flair.set_seed(seed)
                 corpus = copy.copy(base_corpus)
                 if k != 0:
@@ -341,11 +341,12 @@ def train_fewshot(args):
                     model.span_encoding = "BIO"
                 elif args.model_to_use == "hf":
                     # Create model
-                    embeddings = TransformerWordEmbeddings(args.pretrained_hf_decoder)
+                    encoder = TransformerWordEmbeddings(args.pretrained_hf_encoder)
+                    decoder = TransformerDocumentEmbeddings(args.pretrained_hf_decoder)
                     decoder = BatchedLabelVerbalizerDecoder(
-                        label_embedding=TransformerDocumentEmbeddings(args.pretrained_hf_encoder), label_dictionary=decoder_dict,
+                        label_embedding=decoder, label_dictionary=decoder_dict,
                         requires_masking=False, mask_size=args.mask_size)
-                    model = TokenClassifier(embeddings=embeddings, decoder=decoder, label_dictionary=label_dictionary,
+                    model = TokenClassifier(embeddings=encoder, decoder=decoder, label_dictionary=label_dictionary,
                                             label_type=tag_type, span_encoding="BIO")
                 else:
                     raise ValueError("model_to_use must be one of 'flair' or 'hf'")
@@ -369,6 +370,10 @@ def train_fewshot(args):
                     )
 
                     results[f"{k}-{pretraining_seed}"]["results"].append(result["test_score"])
+
+                    for sentence in corpus.train:
+                        for token in sentence:
+                            token.remove_labels(tag_type)
                 else:
                     save_path = save_base_path / f"{k}shot_{pretraining_seed}_{seed}"
                     import os
