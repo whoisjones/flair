@@ -544,43 +544,42 @@ class SentenceTransformerDocumentEmbeddings(DocumentEmbeddings):
         :param batch_size: int number of sentences to processed in one batch
         """
         super().__init__()
-
-        try:
-            from sentence_transformers import SentenceTransformer, models
-        except ModuleNotFoundError:
-            log.warning("-" * 100)
-            log.warning('ATTENTION! The library "sentence-transformers" is not installed!')
-            log.warning('To use Sentence Transformers, please first install with "pip install sentence-transformers"')
-            log.warning("-" * 100)
-            pass
+        from transformers import AutoModel, AutoTokenizer
 
         self.model_name = model
-        hf_model = models.Transformer(model)
-        self.model = SentenceTransformer(modules=[hf_model])
-        #self.model = SentenceTransformer(
-        #    model, cache_folder=str(flair.cache_root / "embeddings" / "sentence-transformer")
-        #)
+        self.model = AutoModel.from_pretrained(model)
+        self.tokenizer = AutoTokenizer.from_pretrained(model)
         self.name = "sentence-transformers-" + str(model)
         self.batch_size = batch_size
         self.static_embeddings = True
-        self.eval()
+        self.to(flair.device)
 
     def _add_embeddings_internal(self, sentences: List[Sentence]) -> List[Sentence]:
-        sentence_batches = [
-            sentences[i * self.batch_size : (i + 1) * self.batch_size]
-            for i in range((len(sentences) + self.batch_size - 1) // self.batch_size)
-        ]
+        #sentence_batches = [
+        #    sentences[i * self.batch_size : (i + 1) * self.batch_size]
+        #    for i in range((len(sentences) + self.batch_size - 1) // self.batch_size)
+        #]
 
-        for batch in sentence_batches:
-            self._add_embeddings_to_sentences(batch)
+        #for batch in sentence_batches:
+        self._add_embeddings_to_sentences(sentences)
 
         return sentences
+
+    def _mean_pooling(self, model_output, attention_mask):
+        token_embeddings = model_output[0]  # First element of model_output contains all token embeddings
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        return torch.nn.functional.normalize(embeddings, p=2, dim=1)
 
     def _add_embeddings_to_sentences(self, sentences: List[Sentence]):
         # convert to plain strings, embedded in a list for the encode function
         sentences_plain_text = [sentence.to_plain_string() for sentence in sentences]
+        encoded_batch = self.tokenizer(sentences_plain_text, padding=True, truncation=True, max_length=64,
+                                        return_tensors="pt").to(flair.device)
 
-        embeddings = self.model.encode(sentences_plain_text, convert_to_numpy=False)
+        hidden_states = self.model(**encoded_batch)
+        embeddings = self._mean_pooling(hidden_states, encoded_batch['attention_mask'])
+
         for sentence, embedding in zip(sentences, embeddings):
             sentence.set_embedding(self.name, embedding)
 
