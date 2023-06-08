@@ -12,15 +12,14 @@ import numpy.random
 import torch
 import torch.cuda
 import pytorch_lightning as pl
-from transformers import AutoModel, AutoTokenizer, DataCollatorForTokenClassification, TrainingArguments, Trainer, \
-    BatchEncoding, PreTrainedTokenizer
+from transformers import AutoModel, AutoTokenizer, DataCollatorForTokenClassification, TrainingArguments, Trainer, PreTrainedTokenizer
 from datasets import load_dataset
 
 import flair
 from flair.data import Sentence, Dictionary
 from flair.embeddings import (
     TransformerWordEmbeddings,
-    TransformerDocumentEmbeddings, Embeddings
+    TransformerDocumentEmbeddings, Embeddings, SentenceTransformerDocumentEmbeddings
 )
 from flair.models import TokenClassifier
 from flair.trainers import ModelTrainer
@@ -69,13 +68,13 @@ class BatchedLabelVerbalizerDecoder(torch.nn.Module):
 
         return [self.verbalized_labels[idx] for idx in unique_entries], unique_entries
 
-    def forward(self, inputs: torch.Tensor, labels: torch.Tensor = None, inference: bool = False) -> torch.Tensor:
+    def forward(self, inputs: torch.Tensor, labels: torch.Tensor = None) -> torch.Tensor:
 
         if self.training and self.requires_masking:
             labels_to_include = labels.cpu().numpy().tolist()
             labels, indices = self.embedding_sublist(labels_to_include)
             self.label_embedding.embed(labels)
-        elif inference or not self.requires_masking:
+        elif not self.training or not self.requires_masking:
             labels = self.label_embedding.embed(self.verbalized_labels)
 
         label_tensor = torch.stack([label.get_embedding() for label in labels])
@@ -88,21 +87,38 @@ class BatchedLabelVerbalizerDecoder(torch.nn.Module):
         if self.training and self.requires_masking:
             all_scores = torch.zeros(scores.shape[0], len(self.verbalized_labels), device=flair.device)
             all_scores[:, torch.LongTensor(list(indices))] = scores
-        elif inference or not self.requires_masking:
+        elif not self.training or not self.requires_masking:
             all_scores = scores
 
         return all_scores
 
 class HfDualEncoder(torch.nn.Module):
-    def __init__(self, labels: List[str], tokenizer: PreTrainedTokenizer, mask_size: int = 128):
+    def __init__(self, labels: dict, encoder_model: str, decoder_model: str, tokenizer: PreTrainedTokenizer, mask_size: int = 128):
         super(HfDualEncoder, self).__init__()
-        self.encoder = AutoModel.from_pretrained("bert-base-uncased")
-        self.decoder = AutoModel.from_pretrained("bert-base-uncased")
+        self.encoder = AutoModel.from_pretrained(encoder_model)
+        if decoder_model == "all-mpnet-base-v2":
+            self.decoder = AutoModel.from_pretrained("sentence-transformers/all-mpnet-base-v2")
+        else:
+            self.decoder = AutoModel.from_pretrained(decoder_model)
+        """
+        labels = []
+        for label in label_mapping.values():
+            if label.startswith('B-'):
+                labels.append(f'begin {label[2:]}')
+            elif label.startswith('I-'):
+                labels.append(f'inside {label[2:]}')
+            elif label == 'O':
+                labels.append('outside')
+            else:
+                print('error')
+        """
+        labels = {int(k): v for k, v in labels.items()}
         self.labels = labels
         self.num_labels = len(labels)
         self.tokenizer = tokenizer
         self.mask_size = mask_size
         self.loss = torch.nn.CrossEntropyLoss()
+        self.i = 0
 
     def _filter_labels(self, labels):
         np_labels = labels.detach().cpu().numpy()
@@ -113,37 +129,93 @@ class HfDualEncoder(torch.nn.Module):
             selected_labels = np.unique(np.concatenate([unique_labels, sampled_labels]))
         else:
             selected_labels = unique_labels
-        label_description = [self.labels[i] for i in selected_labels]
-        encoded_labels = self.tokenizer(label_description, padding=True, truncation=True, max_length=64, return_tensors="pt").to(labels.device)
+        #label_descriptions = [self.labels[i] for i in selected_labels]
+        label_descriptions = []
+        label_granularities = ["description", "labels"]
+        for i in selected_labels:
+            if i == 0:
+                label_description = "outside"
+            else:
+                label_granularity = np.random.choice(label_granularities)
+                fallback_option = [x for x in label_granularities if x != label_granularity][0]
+                if self.labels.get(i).get(label_granularity) is None and self.labels.get(i).get(fallback_option) is not None:
+                    label_granularity = fallback_option
+                elif self.labels.get(i).get(label_granularity) is None and self.labels.get(i).get(fallback_option) is None:
+                    label_description = "miscellaneous"
+                    label_descriptions.append(label_description)
+                    continue
+
+                if label_granularity == "description":
+                    label_description = f"{'begin' if self.labels.get(i)['bio_tag'] == 'B-' else 'inside'} {self.labels.get(i)[label_granularity]}"
+                elif label_granularity == "labels":
+                    num_labels = np.random.geometric(0.5, 1)
+                    num_labels = num_labels if num_labels <= len(self.labels.get(i).get("labels")) else len(self.labels.get(i).get("labels"))
+                    sampled_labels = np.random.choice(self.labels.get(i).get("labels"), num_labels, replace=False).tolist()
+                    label_description = f"{'begin' if self.labels.get(i)['bio_tag'] == 'B-' else 'inside'} {', '.join(sampled_labels)}"
+                else:
+                    raise ValueError(f"Unknown label granularity {label_granularity}")
+            label_descriptions.append(label_description)
+        encoded_labels = self.tokenizer(label_descriptions, padding=True, truncation=True, max_length=64, return_tensors="pt").to(labels.device)
         return encoded_labels, selected_labels
+
+    def adjust_batched_labels(self, label_tensor):
+        batch_size = label_tensor.size(0)
+
+        unique_labels = torch.unique(label_tensor)
+        unique_labels = unique_labels[(unique_labels != -100) & (unique_labels != 0)]
+
+        label_mapping = {label.item(): idx + 1 for idx, label in enumerate(unique_labels)}
+        label_mapping[-100] = -100
+        label_mapping[0] = 0
+
+        adjusted_label_tensor = torch.zeros_like(label_tensor)
+
+        for i in range(batch_size):
+            adjusted_label_tensor[i] = torch.tensor([label_mapping.get(label.item(), -1) for label in label_tensor[i]])
+
+        return adjusted_label_tensor
+
+    def mean_pooling(self, model_output, attention_mask):
+        token_embeddings = model_output[0]  # First element of model_output contains all token embeddings
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+
     def forward(self, input_ids, attention_mask, labels):
-        device = f'cuda:{str(labels.device.index)}'
         token_hidden_states = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
         encoded_labels, selected_label_ids = self._filter_labels(labels)
         label_hidden_states = self.decoder(**encoded_labels)
-        label_cls_token = label_hidden_states.last_hidden_state[:, 0, :]
-        scores = torch.matmul(token_hidden_states.last_hidden_state, label_cls_token.T)
-        logits = torch.zeros(labels.size(0), labels.size(1) , self.num_labels, device=device)
-        logits[:, :, selected_label_ids] = scores
+        if "sentence-transformers" in self.decoder.name_or_path:
+            label_embeddings = self.mean_pooling(label_hidden_states, encoded_labels['attention_mask'])
+            label_embeddings = torch.nn.functional.normalize(label_embeddings, p=2, dim=1)
+        else: # take cls token
+            label_embeddings = label_hidden_states.last_hidden_state[:, 0, :]
+        logits = torch.matmul(token_hidden_states.last_hidden_state, label_embeddings.T)
+        labels = self.adjust_batched_labels(labels)
+        #logits = torch.zeros(labels.size(0), labels.size(1) , self.num_labels, device=device)
+        #logits[:, :, selected_label_ids] = scores
         return (self.loss(logits.transpose(1, 2), labels),)
 
 def get_save_base_path(args, task_name):
-    is_pretraining = True if "pretrain" in args.dataset_path.lower() else False
+    is_pretraining = True if "pretrain" in task_name else False
     is_zelda = True if "zelda" in args.dataset_path.lower() else False
     dataset = f"LONER{'-ZELDA' if is_zelda else ''}" if is_pretraining else f"{args.dataset}{args.fewnerd_granularity if args.dataset == 'fewnerd' else ''}"
 
     if is_pretraining:
         training_arguments =  f"_{args.lr}_seed-{args.seed}_mask-{args.mask_size}_size-{args.corpus_size}"
+        if args.encoder_transformer == args.decoder_transformer:
+            model_arguments = f"{args.encoder_transformer}"
+        else:
+            model_arguments = f"{args.encoder_transformer}_{args.decoder_transformer}"
     else:
         if args.model_to_use == "flair":
             pretraining_model = args.pretrained_flair_model.split('/')[-2].split('_', 1)[-1]
         else:
-            pretraining_model = args.pretrained_hf_encoder.split('/')[-2].split('_', 1)[-1]
+            pretraining_model = args.pretrained_hf_encoder.split('/')[-2]
         training_arguments =  f"-{args.lr}_pretrained-on-{pretraining_model}"
 
     return Path(
         f"{args.cache_path}/{task_name}/"
-        f"{args.transformer + '_' if is_pretraining else ''}"
+        f"{model_arguments + '_' if is_pretraining else ''}"
         f"{dataset}"
         f"{training_arguments}"
     )
@@ -181,8 +253,8 @@ def pretrain_flair(args):
     decoder_dict.span_labels = True
 
     # Create model
-    embeddings = TransformerWordEmbeddings(args.transformer)
-    decoder = BatchedLabelVerbalizerDecoder(label_embedding=TransformerDocumentEmbeddings(args.transformer), label_dictionary=decoder_dict, requires_masking=True, mask_size=args.mask_size)
+    embeddings = TransformerWordEmbeddings(args.encoder_transformer)
+    decoder = BatchedLabelVerbalizerDecoder(label_embedding=TransformerDocumentEmbeddings(args.decoder_transformer), label_dictionary=decoder_dict, requires_masking=True, mask_size=args.mask_size)
     model = TokenClassifier(embeddings=embeddings, decoder=decoder, label_dictionary=label_dict, label_type=label_type, span_encoding="BIO")
 
     trainer = ModelTrainer(model, corpus)
@@ -207,7 +279,11 @@ def pretrain_hf(args):
     random_numbers = random.sample(range(0, len(dataset["train"]) + 1), num_samples)
     small_dataset = dataset["train"].select(random_numbers)
 
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    encoder_tokenizer = AutoTokenizer.from_pretrained(args.encoder_transformer)
+    if args.decoder_transformer == "all-mpnet-base-v2":
+        decoder_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-mpnet-base-v2")
+    else:
+        decoder_tokenizer = AutoTokenizer.from_pretrained(args.decoder_transformer)
 
     def align_labels_with_tokens(labels, word_ids):
         new_labels = []
@@ -232,7 +308,7 @@ def pretrain_hf(args):
         return new_labels
 
     def tokenize_and_align_labels(examples):
-        tokenized_inputs = tokenizer(
+        tokenized_inputs = encoder_tokenizer(
             examples["tokens"], truncation=True, is_split_into_words=True
         )
         all_labels = examples["ner_tags"]
@@ -250,7 +326,7 @@ def pretrain_hf(args):
         remove_columns=small_dataset.column_names,
     )
 
-    data_collator = DataCollatorForTokenClassification(tokenizer)
+    data_collator = DataCollatorForTokenClassification(encoder_tokenizer)
 
     training_args = TrainingArguments(
         output_dir=str(save_base_path),
@@ -265,36 +341,26 @@ def pretrain_hf(args):
         seed=args.seed,
     )
 
-    with open("/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/labelID2label_bio.json", "r") as f:
-        label_mapping = json.load(f)
 
-    labels = []
-    for label in label_mapping.values():
-        if label.startswith("B-"):
-            labels.append(f'begin {label[2:]}')
-        elif label.startswith("I-"):
-            labels.append(f'inside {label[2:]}')
-        elif label == "O":
-            labels.append("outside")
-        else:
-            print("error")
+    with open('/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/zelda_labelID2label.json', 'r') as f:
+        labels = json.load(f)
 
-    model = HfDualEncoder(labels=labels, tokenizer=tokenizer, mask_size=args.mask_size)
+    model = HfDualEncoder(labels=labels, encoder_model=args.encoder_transformer, decoder_model=args.decoder_transformer, tokenizer=decoder_tokenizer, mask_size=args.mask_size)
 
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=None,
-        tokenizer=tokenizer,
+        tokenizer=encoder_tokenizer,
         data_collator=data_collator,
     )
 
     trainer.train()
     model.encoder.save_pretrained(save_base_path / "encoder")
-    tokenizer.save_pretrained(save_base_path / "encoder")
+    encoder_tokenizer.save_pretrained(save_base_path / "encoder")
     model.decoder.save_pretrained(save_base_path / "decoder")
-    tokenizer.save_pretrained(save_base_path / "decoder")
+    decoder_tokenizer.save_pretrained(save_base_path / "decoder")
 
 
 def train_fewshot(args):
@@ -311,13 +377,19 @@ def train_fewshot(args):
     results = {}
     for pretraining_seed in args.pretraining_seeds:
 
+        # every pretraining seed masks out different examples in the dataset
         base_corpus, kept_labels = get_masked_fewnerd_corpus(
             pretraining_seed, args.fewnerd_granularity, inverse_mask=True
         )
 
+        # iterate over k-shots
         for k in args.k:
+
+            # average k-shot scores over 3 seeds for pretraining seed
             results[f"{k}-{pretraining_seed}"] = {"results": []}
-            for seed in range(1):
+
+            for seed in range(0, 3):
+                # ensure same sampling strategy for each seed
                 flair.set_seed(seed)
                 corpus = copy.copy(base_corpus)
                 if k != 0:
@@ -326,6 +398,7 @@ def train_fewshot(args):
                     pass
                 corpus._dev = Subset(base_corpus._train, [])
 
+                # mandatory for flair to work
                 tag_type = "ner"
                 label_dictionary = corpus.make_label_dictionary(tag_type, add_unk=False)
                 decoder_dict = TokenClassifier._create_internal_label_dictionary(label_dictionary, span_encoding="BIO")
@@ -342,9 +415,12 @@ def train_fewshot(args):
                 elif args.model_to_use == "hf":
                     # Create model
                     encoder = TransformerWordEmbeddings(args.pretrained_hf_encoder)
-                    decoder = TransformerDocumentEmbeddings(args.pretrained_hf_decoder)
+                    if "all-mpnet-base-v2" in args.pretrained_hf_decoder:
+                        label_embeddings = SentenceTransformerDocumentEmbeddings(args.pretrained_hf_decoder)
+                    else:
+                        label_embeddings = TransformerDocumentEmbeddings(args.pretrained_hf_decoder)
                     decoder = BatchedLabelVerbalizerDecoder(
-                        label_embedding=decoder, label_dictionary=decoder_dict,
+                        label_embedding=label_embeddings, label_dictionary=decoder_dict,
                         requires_masking=False, mask_size=args.mask_size)
                     model = TokenClassifier(embeddings=encoder, decoder=decoder, label_dictionary=label_dictionary,
                                             label_type=tag_type, span_encoding="BIO")
@@ -502,9 +578,10 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="fewnerd")
     parser.add_argument("--fewnerd_granularity", type=str, default="coarse")
     # LONER needs to be loaded from disk
-    parser.add_argument("--dataset_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/datasets/loner")
+    parser.add_argument("--dataset_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/zelda_jsonl_bio")
     parser.add_argument("--corpus_size", type=str, default="100k")
-    parser.add_argument("--transformer", type=str, default="bert-base-uncased")
+    parser.add_argument("--encoder_transformer", type=str, default="bert-base-uncased")
+    parser.add_argument("--decoder_transformer", type=str, default="bert-base-uncased")
 
     # Training arguments
     parser.add_argument("--mask_size", type=int, default=128)

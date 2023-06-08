@@ -824,7 +824,7 @@ class DefaultClassifier(Classifier[DT], typing.Generic[DT, DT2], ABC):
 
                 # pass data points through network and decode
                 data_point_tensor = self._encode_data_points(batch, data_points)
-                scores = self.decoder(data_point_tensor, inference=True)
+                scores = self.decoder(data_point_tensor)
                 scores = self._mask_scores(scores, data_points)
 
                 # if anything could possibly be predicted
