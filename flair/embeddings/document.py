@@ -546,7 +546,7 @@ class SentenceTransformerDocumentEmbeddings(DocumentEmbeddings):
         super().__init__()
 
         try:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer, models
         except ModuleNotFoundError:
             log.warning("-" * 100)
             log.warning('ATTENTION! The library "sentence-transformers" is not installed!')
@@ -555,9 +555,11 @@ class SentenceTransformerDocumentEmbeddings(DocumentEmbeddings):
             pass
 
         self.model_name = model
-        self.model = SentenceTransformer(
-            model, cache_folder=str(flair.cache_root / "embeddings" / "sentence-transformer")
-        )
+        hf_model = models.Transformer(model)
+        self.model = SentenceTransformer(modules=[hf_model])
+        #self.model = SentenceTransformer(
+        #    model, cache_folder=str(flair.cache_root / "embeddings" / "sentence-transformer")
+        #)
         self.name = "sentence-transformers-" + str(model)
         self.batch_size = batch_size
         self.static_embeddings = True
