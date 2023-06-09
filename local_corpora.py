@@ -58,7 +58,7 @@ def get_corpus(corpus: str, fewnerd_granularity: str = ""):
             }
         )
     elif corpus == "fewnerd":
-        return FEWNERD(fewnerd_granularity=get_fewnerd_label_map(fewnerd_granularity))
+        return FEWNERD(label_name_map=get_fewnerd_label_map(fewnerd_granularity))
     else:
         raise Exception("no valid corpus.")
 

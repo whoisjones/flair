@@ -27,7 +27,7 @@ from flair.training_utils import store_embeddings
 from torch.utils.data.dataset import Subset
 
 from local_loner import LONER
-from local_corpora import get_masked_fewnerd_corpus
+from local_corpora import get_masked_fewnerd_corpus, get_corpus
 
 class BatchedLabelVerbalizerDecoder(torch.nn.Module):
     def __init__(self, label_embedding: Embeddings, label_dictionary: Dictionary, requires_masking: bool, mask_size: int = 128):
@@ -197,11 +197,15 @@ class HfDualEncoder(torch.nn.Module):
 
 def get_save_base_path(args, task_name):
     is_pretraining = True if "pretrain" in task_name else False
-    is_zelda = True if "zelda" in args.dataset_path.lower() else False
-    dataset = f"LONER{'-ZELDA' if is_zelda else ''}" if is_pretraining else f"{args.dataset}{args.fewnerd_granularity if args.dataset == 'fewnerd' else ''}"
+    if args.dataset_path:
+        is_zelda = True if "zelda" in args.dataset_path.lower() else False
+        dataset = f"LONER{'-ZELDA' if is_zelda else ''}"
+    else:
+        dataset = f"{args.dataset}{args.fewnerd_granularity if args.dataset == 'fewnerd' else ''}"
 
     if is_pretraining:
-        training_arguments =  f"_{args.lr}_seed-{args.seed}_mask-{args.mask_size}_size-{args.corpus_size}"
+        training_arguments = f"_{args.lr}_seed-{args.seed}_mask-{args.mask_size}_size-{args.corpus_size}"
+
         if args.encoder_transformer == args.decoder_transformer:
             model_arguments = f"{args.encoder_transformer}"
         else:
@@ -240,12 +244,13 @@ def pretrain_flair(args):
     save_base_path = get_save_base_path(args, task_name="pretrained-dual-encoder")
 
     label_type = "ner"
-    corpus = LONER(base_path=args.dataset_path)
-
-    num_samples = get_corpus_size(args)
-
-    indices = random.sample(range(len(corpus.train)), k=num_samples)
-    corpus._train = Subset(corpus._train, indices)
+    if args.dataset_path:
+        corpus = LONER(base_path=args.dataset_path)
+        num_samples = get_corpus_size(args)
+        indices = random.sample(range(len(corpus.train)), k=num_samples)
+        corpus._train = Subset(corpus._train, indices)
+    else:
+        corpus = get_corpus(args.dataset, args.fewnerd_granularity)
 
     # Create label dictionary and decoder. The decoder needs the label dictionary using BIO encoding from TokenClassifier.
     label_dict = corpus.make_label_dictionary(label_type=label_type, add_unk=False)
@@ -469,7 +474,7 @@ def train_fewshot(args):
     def add_total_average(results: dict):
         kshots = set([x.split("-")[0] for x in results.keys()])
         for kshot in kshots:
-            vals = [value["average"] for key, value in results.items() if key.startswith(kshot)]
+            vals = [value["average"] for key, value in results.items() if key.split("_")[0].replace("shot", "")]
             results[f"total-average-{kshot}"] = np.round(np.mean(vals))
         return results
 
@@ -575,10 +580,10 @@ if __name__ == "__main__":
     parser.add_argument("--pretraining_seeds", type=int, nargs="+", default=[10])
     parser.add_argument("--cache_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models")
     # All datasets from flair or hugginface
-    parser.add_argument("--dataset", type=str, default="fewnerd")
-    parser.add_argument("--fewnerd_granularity", type=str, default="coarse")
+    parser.add_argument("--dataset", type=str, default="") # fewnerd
+    parser.add_argument("--fewnerd_granularity", type=str, default="") # coarse
     # LONER needs to be loaded from disk
-    parser.add_argument("--dataset_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/zelda_jsonl_bio")
+    parser.add_argument("--dataset_path", type=str, default="") # "/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/zelda_jsonl_bio"
     parser.add_argument("--corpus_size", type=str, default="100k")
     parser.add_argument("--encoder_transformer", type=str, default="bert-base-uncased")
     parser.add_argument("--decoder_transformer", type=str, default="bert-base-uncased")
@@ -595,6 +600,9 @@ if __name__ == "__main__":
     parser.add_argument("--pretrained_hf_encoder", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder-hf/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-500k/encoder")
     parser.add_argument("--pretrained_hf_decoder", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder-hf/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-500k/decoder")
     args = parser.parse_args()
+
+    if not any(args.dataset, args.dataset_path):
+        raise ValueError("no dataset provided.")
 
     if args.pretrain_flair:
         pretrain_flair(args)
