@@ -601,7 +601,7 @@ if __name__ == "__main__":
     parser.add_argument("--pretrained_hf_decoder", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder-hf/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-500k/decoder")
     args = parser.parse_args()
 
-    if not any(args.dataset, args.dataset_path):
+    if not any([args.dataset, args.dataset_path]):
         raise ValueError("no dataset provided.")
 
     if args.pretrain_flair:
