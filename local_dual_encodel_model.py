@@ -381,7 +381,7 @@ def train_fewshot(args):
     results = {}
 
     # every pretraining seed masks out different examples in the dataset
-    base_corpus = get_corpus("fewnerd", "fine")
+    base_corpus = get_corpus(args.dataset, args.fewnerd_granularity)
 
     # iterate over k-shots
     for k in args.k:
@@ -398,10 +398,13 @@ def train_fewshot(args):
             flair.set_seed(seed)
             corpus = copy.copy(base_corpus)
             if k != 0:
-                corpus._train = Subset(base_corpus._train, fewshot_indices[f"{k}-{seed}"])
+                if k == -1:
+                    pass
+                else:
+                    corpus._train = Subset(base_corpus._train, fewshot_indices[f"{k}-{seed}"])
+                    corpus._dev = Subset(base_corpus._train, [])
             else:
                 pass
-            corpus._dev = Subset(base_corpus._train, [])
 
             # mandatory for flair to work
             tag_type = "ner"
@@ -432,7 +435,7 @@ def train_fewshot(args):
             else:
                 raise ValueError("model_to_use must be one of 'flair' or 'hf'")
 
-            if k > 0:
+            if k != 0:
                 trainer = ModelTrainer(model, corpus)
 
                 save_path = save_base_path / f"{k}shot_{seed}"
@@ -443,7 +446,7 @@ def train_fewshot(args):
                     learning_rate=args.lr,
                     mini_batch_size=args.bs,
                     mini_batch_chunk_size=args.mbs,
-                    max_epochs=args.epochs,
+                    max_epochs=args.epochs if k != -1 else 3,
                     optimizer=torch.optim.AdamW,
                     train_with_dev=True,
                     min_learning_rate=args.lr * 1e-2,
