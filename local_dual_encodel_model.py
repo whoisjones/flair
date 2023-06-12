@@ -120,15 +120,7 @@ class HfDualEncoder(torch.nn.Module):
         self.loss = torch.nn.CrossEntropyLoss()
         self.i = 0
 
-    def _filter_labels(self, labels):
-        np_labels = labels.detach().cpu().numpy()
-        unique_labels = np.unique(np.clip(np_labels, a_min=0, a_max=None))
-        additional_ids_needed = self.mask_size - unique_labels.shape[0]
-        if additional_ids_needed > 0:
-            sampled_labels = numpy.random.choice(np.arange(0, len(self.labels)), size=additional_ids_needed, replace=False)
-            selected_labels = np.unique(np.concatenate([unique_labels, sampled_labels]))
-        else:
-            selected_labels = unique_labels
+    def _verbalize_labels(self, selected_labels):
         #label_descriptions = [self.labels[i] for i in selected_labels]
         label_descriptions = []
         label_granularities = ["description", "labels"]
@@ -155,23 +147,34 @@ class HfDualEncoder(torch.nn.Module):
                 else:
                     raise ValueError(f"Unknown label granularity {label_granularity}")
             label_descriptions.append(label_description)
+        return label_descriptions
+
+    def _prepare_labels(self, labels):
+        positive_labels = torch.unique(labels)
+        positive_labels = positive_labels[(positive_labels != -100)]
+        number_negatives_needed = self.mask_size - positive_labels.size(0)
+        if number_negatives_needed > 0:
+            negative_labels = numpy.random.choice(np.arange(0, len(self.labels)), size=number_negatives_needed, replace=False)
+            labels_for_batch = np.unique(np.concatenate([positive_labels.detach().cpu().numpy(), negative_labels]))
+        else:
+            labels_for_batch = positive_labels.detach().cpu().numpy()
+        labels = self.adjust_batched_labels(labels_for_batch, labels)
+        label_descriptions = self._verbalize_labels(labels_for_batch)
         encoded_labels = self.tokenizer(label_descriptions, padding=True, truncation=True, max_length=64, return_tensors="pt").to(labels.device)
-        return encoded_labels, selected_labels
+        return encoded_labels, labels
 
-    def adjust_batched_labels(self, label_tensor):
-        batch_size = label_tensor.size(0)
+    def adjust_batched_labels(self, labels_for_batch, original_label_tensor):
+        batch_size = original_label_tensor.size(0)
+        adjusted_label_tensor = torch.zeros_like(original_label_tensor)
 
-        unique_labels = torch.unique(label_tensor)
-        unique_labels = unique_labels[(unique_labels != -100) & (unique_labels != 0)]
+        labels_for_batch = labels_for_batch[(labels_for_batch != 0)]
 
-        label_mapping = {label.item(): idx + 1 for idx, label in enumerate(unique_labels)}
+        label_mapping = {label.item(): idx + 1 for idx, label in enumerate(labels_for_batch)}
         label_mapping[-100] = -100
         label_mapping[0] = 0
 
-        adjusted_label_tensor = torch.zeros_like(label_tensor)
-
         for i in range(batch_size):
-            adjusted_label_tensor[i] = torch.tensor([label_mapping.get(label.item(), -1) for label in label_tensor[i]])
+            adjusted_label_tensor[i] = torch.tensor([label_mapping.get(label.item(), -1) for label in original_label_tensor[i]])
 
         return adjusted_label_tensor
 
@@ -182,7 +185,7 @@ class HfDualEncoder(torch.nn.Module):
 
     def forward(self, input_ids, attention_mask, labels):
         token_hidden_states = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        encoded_labels, selected_label_ids = self._filter_labels(labels)
+        encoded_labels, labels = self._prepare_labels(labels)
         label_hidden_states = self.decoder(**encoded_labels)
         if "sentence-transformers" in self.decoder.name_or_path:
             label_embeddings = self.mean_pooling(label_hidden_states, encoded_labels['attention_mask'])
@@ -190,9 +193,6 @@ class HfDualEncoder(torch.nn.Module):
         else: # take cls token
             label_embeddings = label_hidden_states.last_hidden_state[:, 0, :]
         logits = torch.matmul(token_hidden_states.last_hidden_state, label_embeddings.T)
-        labels = self.adjust_batched_labels(labels)
-        #logits = torch.zeros(labels.size(0), labels.size(1) , self.num_labels, device=device)
-        #logits[:, :, selected_label_ids] = scores
         return (self.loss(logits.transpose(1, 2), labels),)
 
 def get_save_base_path(args, task_name):
