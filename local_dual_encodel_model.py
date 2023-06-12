@@ -93,32 +93,21 @@ class BatchedLabelVerbalizerDecoder(torch.nn.Module):
         return all_scores
 
 class HfDualEncoder(torch.nn.Module):
-    def __init__(self, labels: dict, encoder_model: str, decoder_model: str, tokenizer: PreTrainedTokenizer, mask_size: int = 128):
+    def __init__(self, labels: dict, encoder_model: str, decoder_model: str, tokenizer: PreTrainedTokenizer, uniform_p: list, mask_size: int = 128, geometric_p: float = 0.5):
         super(HfDualEncoder, self).__init__()
         self.encoder = AutoModel.from_pretrained(encoder_model)
         if decoder_model == "all-mpnet-base-v2":
             self.decoder = AutoModel.from_pretrained("sentence-transformers/all-mpnet-base-v2")
         else:
             self.decoder = AutoModel.from_pretrained(decoder_model)
-        """
-        labels = []
-        for label in label_mapping.values():
-            if label.startswith('B-'):
-                labels.append(f'begin {label[2:]}')
-            elif label.startswith('I-'):
-                labels.append(f'inside {label[2:]}')
-            elif label == 'O':
-                labels.append('outside')
-            else:
-                print('error')
-        """
         labels = {int(k): v for k, v in labels.items()}
         self.labels = labels
         self.num_labels = len(labels)
         self.tokenizer = tokenizer
         self.mask_size = mask_size
+        self.uniform_p = uniform_p
+        self.geometric_p = geometric_p
         self.loss = torch.nn.CrossEntropyLoss()
-        self.i = 0
 
     def _verbalize_labels(self, selected_labels):
         #label_descriptions = [self.labels[i] for i in selected_labels]
@@ -128,7 +117,7 @@ class HfDualEncoder(torch.nn.Module):
             if i == 0:
                 label_description = "outside"
             else:
-                label_granularity = np.random.choice(label_granularities)
+                label_granularity = np.random.choice(label_granularities, p=self.uniform_p)
                 fallback_option = [x for x in label_granularities if x != label_granularity][0]
                 if self.labels.get(i).get(label_granularity) is None and self.labels.get(i).get(fallback_option) is not None:
                     label_granularity = fallback_option
@@ -140,7 +129,7 @@ class HfDualEncoder(torch.nn.Module):
                 if label_granularity == "description":
                     label_description = f"{'begin' if self.labels.get(i)['bio_tag'] == 'B-' else 'inside'} {self.labels.get(i)[label_granularity]}"
                 elif label_granularity == "labels":
-                    num_labels = np.random.geometric(0.5, 1)
+                    num_labels = np.random.geometric(self.geometric_p, 1)
                     num_labels = num_labels if num_labels <= len(self.labels.get(i).get("labels")) else len(self.labels.get(i).get("labels"))
                     sampled_labels = np.random.choice(self.labels.get(i).get("labels"), num_labels, replace=False).tolist()
                     label_description = f"{'begin' if self.labels.get(i)['bio_tag'] == 'B-' else 'inside'} {', '.join(sampled_labels)}"
@@ -204,7 +193,8 @@ def get_save_base_path(args, task_name):
         dataset = f"{args.dataset}{args.fewnerd_granularity if args.dataset == 'fewnerd' else ''}"
 
     if is_pretraining:
-        training_arguments = f"_{args.lr}_seed-{args.seed}_mask-{args.mask_size}_size-{args.corpus_size}"
+        sampling = "-".join([str(x) for x in args.uniform_p])
+        training_arguments = f"_{args.lr}_seed-{args.seed}_mask-{args.mask_size}_size-{args.corpus_size}{f'_sampling-{sampling}' if sampling != '0.5-0.5' else ''}"
 
         if args.encoder_transformer == args.decoder_transformer:
             model_arguments = f"{args.encoder_transformer}"
@@ -350,7 +340,7 @@ def pretrain_hf(args):
     with open('/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/zelda_labelID2label.json', 'r') as f:
         labels = json.load(f)
 
-    model = HfDualEncoder(labels=labels, encoder_model=args.encoder_transformer, decoder_model=args.decoder_transformer, tokenizer=decoder_tokenizer, mask_size=args.mask_size)
+    model = HfDualEncoder(labels=labels, encoder_model=args.encoder_transformer, decoder_model=args.decoder_transformer, tokenizer=decoder_tokenizer, mask_size=args.mask_size, uniform_p=args.uniform_p, geometric_p=args.geometric_p)
 
     trainer = Trainer(
         model=model,
@@ -710,6 +700,8 @@ if __name__ == "__main__":
 
     # Training arguments
     parser.add_argument("--mask_size", type=int, default=128)
+    parser.add_argument("--uniform_p", type=float, nargs="+", default=[0.5, 0.5])
+    parser.add_argument("--geometric_p", type=float, default=0.5)
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--bs", type=int, default=4)
     parser.add_argument("--mbs", type=int, default=2)
