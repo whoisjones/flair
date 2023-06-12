@@ -4,6 +4,7 @@ import copy
 import glob
 import random
 import argparse
+from collections import OrderedDict
 from pathlib import Path
 from typing import List
 
@@ -204,7 +205,10 @@ def get_save_base_path(args, task_name):
         if args.model_to_use == "flair":
             pretraining_model = args.pretrained_flair_model.split('/')[-2].split('_', 1)[-1]
         else:
-            pretraining_model = args.pretrained_hf_encoder.split('/')[-2]
+            if "checkpoint" in args.pretrained_hf_encoder:
+                pretraining_model = f"{args.pretrained_hf_encoder.split('/')[-2]}_checkpoint{args.pretrained_hf_encoder.split('/')[-1].replace('checkpoint', '')}"
+            else:
+                pretraining_model = args.pretrained_hf_encoder.split('/')[-2]
         training_arguments =  f"-{args.lr}_pretrained-on-{pretraining_model}"
 
     return Path(
@@ -411,12 +415,25 @@ def train_fewshot(args):
                 model.label_dictionary = decoder_dict
                 model.span_encoding = "BIO"
             elif args.model_to_use == "hf":
-                # Create model
-                encoder = TransformerWordEmbeddings(args.pretrained_hf_encoder)
-                if "all-mpnet-base-v2" in args.pretrained_hf_decoder:
-                    label_embeddings = SentenceTransformerDocumentEmbeddings(args.pretrained_hf_decoder)
+                if "checkpoint" in args.pretrained_hf_encoder and "checkpoint" in args.pretrained_hf_decoder:
+                    state_dict = torch.load(Path(args.pretrained_hf_encoder) / "pytorch_model.bin")
+                    encoder_state = OrderedDict({k.replace("encoder.", "", 1): v for k, v in state_dict.items() if k.startswith("encoder")})
+                    decoder_state = OrderedDict({k.replace("decoder.", ""): v for k, v in state_dict.items() if k.startswith("decoder")})
+
+                    encoder = TransformerWordEmbeddings("bert-base-uncased", use_context_separator=False, use_context=False)
+                    encoder.model.load_state_dict(encoder_state)
+                    if "all-mpnet-base-v2" in args.pretrained_hf_decoder:
+                        label_embeddings = SentenceTransformerDocumentEmbeddings("sentence-transformers/all-mpnet-base-v2")
+                    else:
+                        label_embeddings = TransformerDocumentEmbeddings("bert-base-uncased", use_context_separator=False, use_context=False)
+                    label_embeddings.model.load_state_dict(decoder_state)
                 else:
-                    label_embeddings = TransformerDocumentEmbeddings(args.pretrained_hf_decoder)
+                    # Create model
+                    encoder = TransformerWordEmbeddings(args.pretrained_hf_encoder, use_context_separator=False, use_context=False)
+                    if "all-mpnet-base-v2" in args.pretrained_hf_decoder:
+                        label_embeddings = SentenceTransformerDocumentEmbeddings(args.pretrained_hf_decoder)
+                    else:
+                        label_embeddings = TransformerDocumentEmbeddings(args.pretrained_hf_decoder, use_context_separator=False, use_context=False)
                 decoder = BatchedLabelVerbalizerDecoder(
                     label_embedding=label_embeddings, label_dictionary=decoder_dict,
                     requires_masking=False, mask_size=args.mask_size)
