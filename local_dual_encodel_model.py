@@ -734,14 +734,3 @@ if __name__ == "__main__":
         train_fewshot(args)
     if args.find_hyperparameters:
         find_hyperparameters(args)
-
-def extract_results(path):
-    files = [x for x in glob.glob(f"{path}/*/*") if "training.log" in x or "result.txt" in x]
-    results = {}
-    for file in files:
-        k = file.split("/")[-2].split("_")[0].replace("shot", "")
-        k = k if k != "-1" else "full"
-        if k not in results:
-            results[k] = {"scores": [extract_single_run(file, k)]}
-        else:
-            results[k]["scores"].append(extract_single_run(file, k))
