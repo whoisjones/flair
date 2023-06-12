@@ -502,5 +502,122 @@ def loner_hyperparameters():
 
             print(f"mask: {mask_size} - lr: {lr} - total avg: {round(np.mean(total_avg), 1)}")
 
+
+def main_experiment_per_class(base_path):
+    from prettytable import PrettyTable
+    paths = glob.glob(f"{base_path}/*")
+    order = ["0", "1", "2", "4", "8", "16", "full"]
+    all_results = {}
+
+    def extract_single_run(path):
+        scores_per_class = {}
+        extract = False
+        i = 0
+        with open(path, "r") as f:
+            for line in f.readlines():
+                if "precision" in line:
+                    extract = True
+                    continue
+
+                if extract and line.split() and i < 66:
+                    scores_per_class[" ".join(line.split()[:-4])] = round(float(line.split()[-2]) * 100, 2)
+                    i += 1
+
+        return scores_per_class
+
+    for path in paths:
+        files = [x for x in glob.glob(f"{path}/*/*") if "training.log" in x or "result.txt" in x]
+        results = {}
+        for file in files:
+            k = file.split("/")[-2].split("_")[0].replace("shot", "")
+            k = k if k != "-1" else "full"
+            if k not in results:
+                results[k] = {"scores": [extract_single_run(file)]}
+            else:
+                results[k]["scores"].append(extract_single_run(file))
+
+        for k, v in results.items():
+            _tmp_avg = {}
+            _tmp_std = {}
+            for label in v["scores"][0].keys():
+                _tmp_avg[label] = np.round(np.mean([s[label] for s in v["scores"]]), 2)
+                _tmp_std[label] = np.round(np.std([s[label] for s in v["scores"]]), 2)
+            _tmp_avg = dict(sorted(_tmp_avg.items(), key=lambda x: x[1], reverse=True))
+            _tmp_std = {k: _tmp_std[k] for k in _tmp_avg.keys()}
+            results[k]["avg"] = _tmp_avg
+            results[k]["std"] = _tmp_std
+
+        results = {k: results[k] for k in order}
+        model = path.split('/')[-1].split("_", 1)[-1]
+        all_results[model] = results
+
+    for model, shots in all_results.items():
+        print(f"Model: {model}")
+        labels = list(shots["0"]["avg"].keys())
+        table = PrettyTable()
+        table.field_names = ["label"] + order
+        for label in labels:
+            row = [label]
+            for k in order:
+                row = row + [f"{shots[k]['avg'][label]} +/- {shots[k]['std'][label]}"]
+            table.add_row(row)
+        print(table)
+
+def main_experiments(base_path, add_graph: bool = False):
+    from prettytable import PrettyTable
+    paths = glob.glob(f"{base_path}/*")
+    paths = [path for path in paths if not ("fewnerdfine-1e-05_pretrained-on-bert-base-uncased_" in path or "fewnerdfine-5e-05_" in path)]
+    order = ["0", "1", "2", "4", "8", "16", "full"]
+    all_results = {}
+
+    def extract_single_run(path):
+        with open(path, "r") as f:
+            for line in f.readlines():
+                if "micro avg" in line and line.split()[0] == "micro":
+                    return round(float(line.split()[-2]) * 100, 2)
+
+    for path in paths:
+        files = [x for x in glob.glob(f"{path}/*/*") if "training.log" in x or "result.txt" in x]
+        results = {}
+        for file in files:
+            k = file.split("/")[-2].split("_")[0].replace("shot", "")
+            k = k if k != "-1" else "full"
+            if k not in results:
+                results[k] = {"scores": [extract_single_run(file)]}
+            else:
+                results[k]["scores"].append(extract_single_run(file))
+
+        for k, v in results.items():
+            results[k]["avg"] = np.round(np.mean(v["scores"]), 2)
+            results[k]["std"] = np.round(np.std(v["scores"]), 2)
+
+        results = {k: results[k] for k in order}
+        model = path.split('/')[-1].split("_", 1)[-1]
+        all_results[model] = results
+
+    table = PrettyTable()
+    table.field_names = ["model"] + order
+    for k, v in all_results.items():
+        table.add_row([k] + [f"{y['avg']} +/- {y['std']}" for x, y in v.items()])
+    print(table)
+
+    if add_graph:
+        plt.figure(figsize=(12, 8))
+        for model, scores in all_results.items():
+            x_values = list(scores.keys())
+            y_values = [entry['avg'] for entry in scores.values()]
+            std_values = [entry['std'] for entry in scores.values()]
+
+            plt.plot(x_values, y_values, marker='o', label=model.replace("pretrained_on", ""))
+            plt.fill_between(x_values, np.array(y_values) - np.array(std_values), np.array(y_values) + np.array(std_values),
+                             alpha=0.2)
+
+        plt.xlabel('k-shots')
+        plt.ylabel('F1 score')
+        plt.title('Few-Shot on increasing amount of seen labels')
+        plt.legend(fontsize="small")
+        plt.grid(True)
+        plt.show()
+
 if __name__ == "__main__":
     loner_hyperparameters()

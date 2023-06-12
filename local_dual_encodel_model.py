@@ -373,7 +373,7 @@ def train_fewshot(args):
     if torch.cuda.is_available():
         flair.device = f"cuda:{args.cuda_device}"
 
-    save_base_path = get_save_base_path(args, task_name="fewshot-dual-encoder")
+    save_base_path = get_save_base_path(args, task_name="fewshot-dual-encoder-main-experiment")
 
     with open(f"data/fewshot_fewnerdfine.json", "r") as f:
         fewshot_indices = json.load(f)
@@ -391,7 +391,7 @@ def train_fewshot(args):
 
         for seed in range(0, 5):
 
-            if seed > 0 and k > 0:
+            if seed > 0 and k == 0:
                 continue
 
             # ensure same sampling strategy for each seed
@@ -734,3 +734,14 @@ if __name__ == "__main__":
         train_fewshot(args)
     if args.find_hyperparameters:
         find_hyperparameters(args)
+
+def extract_results(path):
+    files = [x for x in glob.glob(f"{path}/*/*") if "training.log" in x or "result.txt" in x]
+    results = {}
+    for file in files:
+        k = file.split("/")[-2].split("_")[0].replace("shot", "")
+        k = k if k != "-1" else "full"
+        if k not in results:
+            results[k] = {"scores": [extract_single_run(file, k)]}
+        else:
+            results[k]["scores"].append(extract_single_run(file, k))
