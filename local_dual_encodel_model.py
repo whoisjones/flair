@@ -204,11 +204,13 @@ def get_save_base_path(args, task_name):
     else:
         if args.model_to_use == "flair":
             pretraining_model = args.pretrained_flair_model.split('/')[-2].split('_', 1)[-1]
-        else:
+        elif args.model_to_use == "hf":
             if "checkpoint" in args.pretrained_hf_encoder:
                 pretraining_model = f"{args.pretrained_hf_encoder.split('/')[-2]}_checkpoint{args.pretrained_hf_encoder.split('/')[-1].replace('checkpoint', '')}"
             else:
                 pretraining_model = args.pretrained_hf_encoder.split('/')[-2]
+        else:
+            pretraining_model = "plain-bert"
         training_arguments =  f"-{args.lr}_pretrained-on-{pretraining_model}"
 
     return Path(
@@ -494,6 +496,152 @@ def train_fewshot(args):
     with open(save_base_path / "results.json", "w") as f:
         json.dump(results, f)
 
+
+def train_low_resource(args):
+    flair.set_seed(args.seed)
+
+    if torch.cuda.is_available():
+        flair.device = f"cuda:{args.cuda_device}"
+
+    save_base_path = get_save_base_path(args, task_name="low-resource-dual-encoder-main-experiment")
+
+    with open(f"data/fewshot_{args.dataset}{args.fewnerd_granularity if args.dataset == 'fewnerd' else ''}.json", "r") as f:
+        fewshot_indices = json.load(f)
+
+    results = {}
+
+    # every pretraining seed masks out different examples in the dataset
+    base_corpus = get_corpus(args.dataset, args.fewnerd_granularity)
+
+    # iterate over k-shots
+    for k in args.k:
+
+        # average k-shot scores over 3 seeds for pretraining seed
+        results[f"{k}"] = {"results": []}
+
+        for seed in range(0, 5):
+
+            if seed > 0 and k == 0:
+                continue
+
+            # ensure same sampling strategy for each seed
+            flair.set_seed(seed)
+            corpus = copy.copy(base_corpus)
+            if k != 0:
+                if k == -1:
+                    pass
+                else:
+                    corpus._train = Subset(base_corpus._train, fewshot_indices[f"{k}-{seed}"])
+                    corpus._dev = Subset(base_corpus._train, [])
+            else:
+                pass
+
+            # mandatory for flair to work
+            tag_type = "ner"
+            label_dictionary = corpus.make_label_dictionary(tag_type, add_unk=False)
+            decoder_dict = TokenClassifier._create_internal_label_dictionary(label_dictionary, span_encoding="BIO")
+            decoder_dict.span_labels = True
+
+            if args.model_to_use == "flair":
+                model = TokenClassifier.load(args.pretrained_flair_model)
+                # Set the new label_dictionary in the decoder and disable masking
+                model.decoder.verbalized_labels = model.decoder.verbalize_labels(decoder_dict)
+                model.decoder.requires_masking = False
+                # Also set the label_dictionary in the model itself for evaluation
+                model.label_dictionary = decoder_dict
+                model.span_encoding = "BIO"
+            elif args.model_to_use == "hf":
+                if "checkpoint" in args.pretrained_hf_encoder and "checkpoint" in args.pretrained_hf_decoder:
+                    state_dict = torch.load(Path(args.pretrained_hf_encoder) / "pytorch_model.bin")
+                    encoder_state = OrderedDict({k.replace("encoder.", "", 1): v for k, v in state_dict.items() if k.startswith("encoder")})
+                    decoder_state = OrderedDict({k.replace("decoder.", ""): v for k, v in state_dict.items() if k.startswith("decoder")})
+
+                    encoder = TransformerWordEmbeddings("bert-base-uncased", use_context_separator=False, use_context=False)
+                    encoder.model.load_state_dict(encoder_state)
+                    if "all-mpnet-base-v2" in args.pretrained_hf_decoder:
+                        label_embeddings = SentenceTransformerDocumentEmbeddings("sentence-transformers/all-mpnet-base-v2")
+                    else:
+                        label_embeddings = TransformerDocumentEmbeddings("bert-base-uncased", use_context_separator=False, use_context=False)
+                    label_embeddings.model.load_state_dict(decoder_state)
+                else:
+                    # Create model
+                    encoder = TransformerWordEmbeddings(args.pretrained_hf_encoder, use_context_separator=False, use_context=False)
+                    if "all-mpnet-base-v2" in args.pretrained_hf_decoder:
+                        label_embeddings = SentenceTransformerDocumentEmbeddings(args.pretrained_hf_decoder)
+                    else:
+                        label_embeddings = TransformerDocumentEmbeddings(args.pretrained_hf_decoder, use_context_separator=False, use_context=False)
+                decoder = BatchedLabelVerbalizerDecoder(
+                    label_embedding=label_embeddings, label_dictionary=decoder_dict,
+                    requires_masking=False, mask_size=args.mask_size)
+                model = TokenClassifier(embeddings=encoder, decoder=decoder, label_dictionary=label_dictionary,
+                                        label_type=tag_type, span_encoding="BIO")
+            elif args.model_to_use == "bert":
+                label_dict = corpus.make_label_dictionary(label_type=tag_type, add_unk=False)
+                decoder_dict = TokenClassifier._create_internal_label_dictionary(label_dict, span_encoding="BIO")
+                decoder_dict.span_labels = True
+
+                # Create model
+                embeddings = TransformerWordEmbeddings("bert-base-uncased")
+                decoder = BatchedLabelVerbalizerDecoder(
+                    label_embedding=TransformerDocumentEmbeddings("bert-base-uncased"),
+                    label_dictionary=decoder_dict, requires_masking=True, mask_size=args.mask_size)
+                model = TokenClassifier(embeddings=embeddings, decoder=decoder, label_dictionary=label_dict,
+                                        label_type=tag_type, span_encoding="BIO")
+            else:
+                raise ValueError("model_to_use must be one of 'flair' or 'hf'")
+
+            if k != 0:
+                trainer = ModelTrainer(model, corpus)
+
+                save_path = save_base_path / f"{k}shot_{seed}"
+
+                # 7. run fine-tuning
+                result = trainer.train(
+                    save_path,
+                    learning_rate=args.lr,
+                    mini_batch_size=args.bs,
+                    mini_batch_chunk_size=args.mbs,
+                    max_epochs=args.epochs if k != -1 else 3,
+                    optimizer=torch.optim.AdamW,
+                    train_with_dev=True,
+                    min_learning_rate=args.lr * 1e-2,
+                    save_final_model=False,
+                )
+
+                results[f"{k}"]["results"].append(result["test_score"])
+
+                for sentence in corpus.train:
+                    for token in sentence:
+                        token.remove_labels(tag_type)
+            else:
+                save_path = save_base_path / f"{k}shot_{seed}"
+                import os
+
+                if not os.path.exists(save_path):
+                    os.mkdir(save_path)
+
+                result = model.evaluate(corpus.test, "ner", out_path=save_path / "predictions.txt")
+                results[f"{k}"]["results"].append(result.main_score)
+                with open(save_path / "result.txt", "w") as f:
+                    f.write(result.detailed_results)
+
+    def postprocess_scores(scores: dict):
+        rounded_scores = [round(float(score) * 100, 2) for score in scores["results"]]
+        return {"results": rounded_scores, "average": np.mean(rounded_scores), "std": np.std(rounded_scores)}
+
+    def add_total_average(results: dict):
+        kshots = set([x.split("-")[0] for x in results.keys()])
+        for kshot in kshots:
+            vals = [value["average"] for key, value in results.items() if key.split("_")[0].replace("shot", "")]
+            results[f"total-average-{kshot}"] = np.round(np.mean(vals))
+        return results
+
+    results = {setting: postprocess_scores(result) for setting, result in results.items()}
+    results = add_total_average(results)
+
+    with open(save_base_path / "results.json", "w") as f:
+        json.dump(results, f)
+
 def train_masked_fewshot(args):
     flair.set_seed(args.seed)
 
@@ -698,6 +846,7 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_flair", action="store_true")
     parser.add_argument("--pretrain_hf", action="store_true")
     parser.add_argument("--train_fewshot", action="store_true")
+    parser.add_argument("--train_low_resource", action="store_true")
     parser.add_argument("--train_masked_fewshot", action="store_true")
     parser.add_argument("--find_hyperparameters", action="store_true")
 
@@ -739,6 +888,8 @@ if __name__ == "__main__":
         pretrain_hf(args)
     if args.train_fewshot:
         train_fewshot(args)
+    if args.train_low_resource:
+        train_low_resource(args)
     if args.train_masked_fewshot:
         train_fewshot(args)
     if args.find_hyperparameters:
