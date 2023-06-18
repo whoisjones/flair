@@ -9,6 +9,8 @@ import json
 import pandas as pd
 from pathlib import Path
 import matplotlib.colors as mcolors
+from matplotlib import gridspec
+
 
 def recompute_results(path: str):
     """
@@ -563,10 +565,10 @@ def main_experiment_per_class(base_path):
             table.add_row(row)
         print(table)
 
-def main_experiments(base_path, add_graph: bool = False):
+def main_experiments_low_resource(base_path, add_graph: bool = False):
     from prettytable import PrettyTable
     paths = glob.glob(f"{base_path}/*")
-    paths = [path for path in paths if not ("fewnerdfine-1e-05_pretrained-on-bert-base-uncased_" in path or "fewnerdfine-5e-05_" in path)]
+    #paths = [path for path in paths if not ("fewnerdfine-1e-05_pretrained-on-bert-base-uncased_" in path or "fewnerdfine-5e-05_" in path)]
     order = ["0", "1", "2", "4", "8", "16", "full"]
     all_results = {}
 
@@ -581,7 +583,7 @@ def main_experiments(base_path, add_graph: bool = False):
         results = {}
         for file in files:
             k = file.split("/")[-2].split("_")[0].replace("shot", "")
-            k = k if k != "-1" else "full"
+            k = "full" if k == "full-" else k
             if k not in results:
                 results[k] = {"scores": [extract_single_run(file)]}
             else:
@@ -592,32 +594,373 @@ def main_experiments(base_path, add_graph: bool = False):
             results[k]["std"] = np.round(np.std(v["scores"]), 2)
 
         results = {k: results[k] for k in order}
-        model = path.split('/')[-1].split("_", 1)[-1]
+        dataset = path.split('/')[-1].split("-", 1)[0]
+        raw_model = path.split('/')[-1].split("-", 1)[-1].split("_", 1)[-1]
+        if "ZELDA" in raw_model:
+            if "100k" in raw_model:
+                model = "PaedNER + ZELDA (100k)"
+            elif "500k" in raw_model:
+                model = "PaedNER + ZELDA (500k)"
+            elif "1M" in raw_model:
+                model = "PaedNER + ZELDA (1M)"
+            else:
+                raise ValueError
+        else:
+            model = "no pretraining"
+
+        if dataset not in all_results:
+            all_results[dataset] = {model: results}
+        else:
+            all_results[dataset][model] = results
+
+    label_order = ["PaedNER + ZELDA (100k)", "PaedNER + ZELDA (500k)", "PaedNER + ZELDA (1M)", "no pretraining"]
+    for dataset, pretraining_dict in all_results.items():
+        all_results[dataset] = {k: pretraining_dict[k] for k in label_order}
+
+    for target_dataset, pretraining_dict in all_results.items():
+        print(target_dataset)
+        table = PrettyTable()
+        table.field_names = ["model"] + order
+        for pretraining_model, scores in pretraining_dict.items():
+            table.add_row([pretraining_model] + [f"{score['avg']} +/- {score['std']}" for kshot, score in scores.items()])
+        print(table)
+
+    if add_graph:
+        plt.style.use("seaborn")
+        plt.rcParams['axes.labelsize'] = 14
+        plt.rcParams['axes.titlesize'] = 14
+        plt.rcParams['xtick.labelsize'] = 14
+        plt.rcParams['ytick.labelsize'] = 14
+
+        order = ["conll_03", "wnut_17", "ontonotes", "fewnerdcoarse", "fewnerdfine"]
+        display_names = {
+            "conll_03": "CoNLL-03",
+            "wnut_17": "WNUT-17",
+            "ontonotes": "OntoNotes",
+            "fewnerdcoarse": "FewNERD (coarse)",
+            "fewnerdfine": "FewNERD (fine)"
+        }
+
+        colors = {
+            "no pretraining": plt.rcParams['axes.prop_cycle'].by_key()['color'][2],
+            "bert-base-uncased (100k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][3],
+            "bert-base-uncased (500k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
+            "bert-base-uncased (1M)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+        }
+
+        formatted_all_results = {display_names.get(k): all_results.get(k) for k in order}
+        fig = plt.figure(figsize=(16, 10))
+        gs = gridspec.GridSpec(2, 12)
+        for i, (datasets, scores_per_model) in enumerate(formatted_all_results.items()):
+            if i < 3:
+                ax = plt.subplot(gs[0, 4 * i:4 * i + 4])
+            else:
+                ax = plt.subplot(gs[1, 4 * i - 10:4 * i - 10 + 4])
+
+            ax.set_title(datasets)
+            ax.set_xlabel("k-shots")
+            ax.set_ylabel("F1-score")
+
+            for model, scores in scores_per_model.items():
+                x_values = list(scores.keys())
+                y_values = [entry['avg'] for entry in scores.values()]
+                std_values = [entry['std'] for entry in scores.values()]
+                ax.plot(x_values, y_values, marker='o', label=model, color=colors[model])
+                ax.fill_between(x_values, np.array(y_values) - np.array(std_values), np.array(y_values) + np.array(std_values),
+                                 alpha=0.2, color=colors[model])
+
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='center', bbox_to_anchor=(0.91, 0.25), fontsize="large")
+
+        plt.tight_layout()
+        plt.show()
+
+
+def main_experiments_tagset_extension(add_graph: bool = False):
+    from prettytable import PrettyTable
+    ours = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/flair-models/fewshot-dual-encoder/fewnerd*")
+    baselines = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/flair-models/fewshot-dual-encoder/baseline/*")
+    filtered_baselines = [x for x in baselines if "coarse-without-misc" not in x and not "40" in x and "_fewnerd-coarse-fine-masked" not in x]
+    order = ["0", "1", "2", "4", "8", "16"]
+    all_results = {}
+
+    def extract_single_run(path):
+        with open(path, "r") as f:
+            for line in f.readlines():
+                if "micro avg" in line and line.split()[0] == "micro":
+                    return round(float(line.split()[-2]) * 100, 2)
+
+    for path in ours:
+        files = [x for x in glob.glob(f"{path}/*/*") if "training.log" in x or "result.txt" in x]
+        results = {}
+        for file in files:
+            k = file.split("/")[-2].split("_")[0].replace("shot", "")
+            k = "full" if k == "full-" else k
+            if k not in results:
+                results[k] = {"scores": [extract_single_run(file)]}
+            else:
+                results[k]["scores"].append(extract_single_run(file))
+
+        for k, v in results.items():
+            results[k]["avg"] = np.round(np.mean(v["scores"]), 2)
+            results[k]["std"] = np.round(np.std(v["scores"]), 2)
+
+        results = {k: results[k] for k in order}
+        dataset = path.split('/')[-1].split("-", 1)[0]
+        raw_model = path.split('/')[-1].split("-", 1)[-1].split("_", 1)[-1]
+        if "all-mpnet-base-v2" in raw_model:
+            encoder = "all-mpnet-base-v2"
+        else:
+            encoder = "bert-base-uncased"
+
+        if "100k" in raw_model:
+            size = "100k"
+        elif "500k" in raw_model:
+            size = "500k"
+        elif "1M" in raw_model:
+            size = "1M"
+        else:
+            raise ValueError
+
+        model = f"{encoder} ({size})"
+
+        if dataset not in all_results:
+            all_results[dataset] = {model: results}
+        else:
+            all_results[dataset][model] = results
+
+    for path in filtered_baselines:
+        files = [x for x in glob.glob(f"{path}/*/*") if "training.log" in x or "result.txt" in x]
+        results = {}
+        for file in files:
+            k = file.split("/")[-2].split("_")[0].replace("shot", "")
+            if k in ["32", "64"]:
+                continue
+            if k not in results:
+                results[k] = {"scores": [extract_single_run(file)]}
+            else:
+                results[k]["scores"].append(extract_single_run(file))
+
+        for k, v in results.items():
+            results[k]["avg"] = np.round(np.mean(v["scores"]), 2)
+            results[k]["std"] = np.round(np.std(v["scores"]), 2)
+
+        results = {k: results[k] for k in order}
+        dataset = path.split('/')[-1].split('_', 2)[1]
+
+        if "fewnerd-fine" in dataset:
+            dataset = "fewnerdfine"
+        elif "fewnerd-coarse" in dataset:
+            dataset = "fewnerdcoarse"
+        else:
+            raise ValueError
+
+        match = re.search(r'pretrained-on-(.+?)-masked', path.split('/')[-1].split('_', 2)[2])
+        if match:
+            model = match.group(1)
+            if "coarse-fine" in model:
+                model = "FewNERD (coarse + fine)"
+            elif "fine" in model:
+                model = "FewNERD (fine)"
+            elif "coarse" in model:
+                model = "FewNERD (coarse)"
+            else:
+                raise ValueError
+        else:
+            raise ValueError
+
+        if dataset not in all_results:
+            all_results[dataset] = {model: results}
+        else:
+            all_results[dataset][model] = results
+
+    if add_graph:
+        plt.style.use("seaborn")
+        plt.rcParams['axes.labelsize'] = 12
+        plt.rcParams['axes.titlesize'] = 12
+        plt.rcParams['xtick.labelsize'] = 12
+        plt.rcParams['ytick.labelsize'] = 12
+
+        label_order = ["bert-base-uncased (100k)", "bert-base-uncased (500k)", "bert-base-uncased (1M)", "all-mpnet-base-v2 (100k)", "all-mpnet-base-v2 (500k)", "all-mpnet-base-v2 (1M)", "FewNERD (coarse)", "FewNERD (fine)", "FewNERD (coarse + fine)"]
+
+        colors = {
+            "bert-base-uncased (100k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+            "bert-base-uncased (500k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+            "bert-base-uncased (1M)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+            "all-mpnet-base-v2 (100k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
+            "all-mpnet-base-v2 (500k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
+            "all-mpnet-base-v2 (1M)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
+            "FewNERD (coarse)": plt.rcParams['axes.prop_cycle'].by_key()['color'][2],
+            "FewNERD (fine)": plt.rcParams['axes.prop_cycle'].by_key()['color'][2],
+            "FewNERD (coarse + fine)": plt.rcParams['axes.prop_cycle'].by_key()['color'][2],
+        }
+
+        markers = {
+            "bert-base-uncased (100k)": "o",
+            "bert-base-uncased (500k)": "X",
+            "bert-base-uncased (1M)": "^",
+            "all-mpnet-base-v2 (100k)": "o",
+            "all-mpnet-base-v2 (500k)": "X",
+            "all-mpnet-base-v2 (1M)": "^",
+            "FewNERD (coarse)": "o",
+            "FewNERD (fine)": "X",
+            "FewNERD (coarse + fine)": "^",
+        }
+
+        formatted_results = {}
+        for dataset, pretraining_models in all_results.items():
+            if dataset == "fewnerdcoarse":
+                formatted_results["FewNERD (coarse)"] = {}
+                for model_order in label_order:
+                    formatted_results["FewNERD (coarse)"][model_order] = pretraining_models.get(model_order)
+            else:
+                formatted_results["FewNERD (fine)"] = {}
+                for model_order in label_order:
+                    formatted_results["FewNERD (fine)"][model_order] = pretraining_models.get(model_order)
+
+        # Create subplots with two plots side by side
+        fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
+
+        # Iterate over datasets
+        for i, (dataset, pretraining_models) in enumerate(formatted_results.items()):
+
+            axs[i].set_xlabel("k-shot")
+            axs[i].set_ylabel("F1 score")
+            axs[i].set_title(dataset)
+
+            for model_key, kshots in pretraining_models.items():
+                x_vals = []
+                std_vals = []
+                y_vals = []
+                for kshot, scores in kshots.items():
+                    x_vals.append(kshot)
+                    y_vals.append(scores["avg"])
+                    std_vals.append(scores["std"])
+                axs[i].plot(x_vals, np.array(y_vals), label=model_key, marker=markers.get(model_key), color=colors.get(model_key))
+                axs[i].fill_between(x_vals, np.array(y_vals) - np.array(std_vals),
+                                    np.array(y_vals) + np.array(std_vals), alpha=0.1)
+            axs[i].legend(title="Pre-training corpus", loc="lower right")
+
+
+        # Adjust the spacing between subplots
+        plt.tight_layout()
+        # Display the plots
+        plt.show()
+
+def main_experiments_in_domain(base_path, add_graph: bool = False):
+    from prettytable import PrettyTable
+    paths = glob.glob(f"{base_path}/*")
+    #paths = [path for path in paths if not ("fewnerdfine-1e-05_pretrained-on-bert-base-uncased_" in path or "fewnerdfine-5e-05_" in path)]
+    kshot_order = ["0", "1", "2", "4", "8", "16"]
+    all_results = {}
+
+    model_order = ["bert-base-uncased (100k)", "bert-base-uncased (500k)", "bert-base-uncased (1M)", "all-mpnet-base-v2 (100k)", "all-mpnet-base-v2 (500k)", "all-mpnet-base-v2 (1M)", "CoNLL-03", "FewNERD (coarse)"]
+
+    def extract_single_run(path):
+        with open(path, "r") as f:
+            for line in f.readlines():
+                if "micro avg" in line and line.split()[0] == "micro":
+                    return round(float(line.split()[-2]) * 100, 2)
+
+    for path in paths:
+        if "ontonotes" in path:
+            continue
+        files = [x for x in glob.glob(f"{path}/*/*") if "training.log" in x or "result.txt" in x]
+        results = {}
+        for file in files:
+            k = file.split("/")[-2].split("_")[0].replace("shot", "")
+            k = k if k != "-1" else "full"
+            if k == "full":
+                continue
+            if k not in results:
+                results[k] = {"scores": [extract_single_run(file)]}
+            else:
+                results[k]["scores"].append(extract_single_run(file))
+
+        for k, v in results.items():
+            results[k]["avg"] = np.round(np.mean(v["scores"]), 2)
+            results[k]["std"] = np.round(np.std(v["scores"]), 2)
+
+        results = {k: results[k] for k in kshot_order}
+        raw_model = path.split('/')[-1].split("_", 1)[-1]
+
+        if "ZELDA" in raw_model:
+            if "all-mpnet-base-v2" in raw_model:
+                encoder = "all-mpnet-base-v2"
+            else:
+                encoder = "bert-base-uncased"
+        else:
+            if "conll" in raw_model:
+                encoder = "CoNLL-03"
+            elif "fewnerdcoarse" in raw_model:
+                encoder = "FewNERD (coarse)"
+            elif "ontonotes" in raw_model:
+                encoder = "OntoNotes"
+            else:
+                raise ValueError
+
+        if "100k" in raw_model:
+            size = " (100k)"
+        elif "500k" in raw_model:
+            size = " (500k)"
+        elif "1M" in raw_model:
+            size = " (1M)"
+        else:
+            size = ""
+
+        model = f"{encoder}{size}"
+
         all_results[model] = results
 
     table = PrettyTable()
-    table.field_names = ["model"] + order
+    table.field_names = ["model"] + kshot_order
     for k, v in all_results.items():
         table.add_row([k] + [f"{y['avg']} +/- {y['std']}" for x, y in v.items()])
     print(table)
 
     if add_graph:
-        plt.figure(figsize=(12, 8))
-        for model, scores in all_results.items():
+        plt.style.use("seaborn")
+        plt.figure(figsize=(7, 7))
+
+        colors = {
+            "bert-base-uncased (100k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+            "bert-base-uncased (500k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+            "bert-base-uncased (1M)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+            "all-mpnet-base-v2 (100k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
+            "all-mpnet-base-v2 (500k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
+            "all-mpnet-base-v2 (1M)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
+            "CoNLL-03": plt.rcParams['axes.prop_cycle'].by_key()['color'][2],
+            "FewNERD (coarse)": plt.rcParams['axes.prop_cycle'].by_key()['color'][2],
+        }
+
+        markers = {
+            "bert-base-uncased (100k)": "o",
+            "bert-base-uncased (500k)": "X",
+            "bert-base-uncased (1M)": "^",
+            "all-mpnet-base-v2 (100k)": "o",
+            "all-mpnet-base-v2 (500k)": "X",
+            "all-mpnet-base-v2 (1M)": "^",
+            "CoNLL-03": "o",
+            "FewNERD (coarse)": "X",
+        }
+
+        formatted_results = {k: all_results.get(k) for k in model_order}
+
+        for model, scores in formatted_results.items():
             x_values = list(scores.keys())
             y_values = [entry['avg'] for entry in scores.values()]
             std_values = [entry['std'] for entry in scores.values()]
 
-            plt.plot(x_values, y_values, marker='o', label=model.replace("pretrained_on", ""))
+            plt.plot(x_values, y_values, marker=markers.get(model), label=model, color=colors.get(model))
             plt.fill_between(x_values, np.array(y_values) - np.array(std_values), np.array(y_values) + np.array(std_values),
-                             alpha=0.2)
+                             alpha=0.1)
 
         plt.xlabel('k-shots')
         plt.ylabel('F1 score')
-        plt.title('Few-Shot on increasing amount of seen labels')
-        plt.legend(fontsize="small")
+        plt.title("Few-shot on FewNERD (fine)")
+        plt.legend(fontsize="small", loc="lower right", title="Pre-training corpus")
         plt.grid(True)
         plt.show()
 
 if __name__ == "__main__":
-    loner_hyperparameters()
+    main_experiments_low_resource(base_path="/glusterfs/dfs-gfs-dist/goldejon/flair-models/low-resource-dual-encoder-main-experiment", add_graph=True)

@@ -584,7 +584,7 @@ def train_low_resource(args):
                 embeddings = TransformerWordEmbeddings("bert-base-uncased")
                 decoder = BatchedLabelVerbalizerDecoder(
                     label_embedding=TransformerDocumentEmbeddings("bert-base-uncased"),
-                    label_dictionary=decoder_dict, requires_masking=True, mask_size=args.mask_size)
+                    label_dictionary=decoder_dict, requires_masking=False, mask_size=args.mask_size)
                 model = TokenClassifier(embeddings=embeddings, decoder=decoder, label_dictionary=label_dict,
                                         label_type=tag_type, span_encoding="BIO")
             else:
