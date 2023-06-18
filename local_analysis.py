@@ -606,14 +606,14 @@ def main_experiments_low_resource(base_path, add_graph: bool = False):
             else:
                 raise ValueError
         else:
-            model = "no pretraining"
+            model = "baseline (no pre-training)"
 
         if dataset not in all_results:
             all_results[dataset] = {model: results}
         else:
             all_results[dataset][model] = results
 
-    label_order = ["PaedNER + ZELDA (100k)", "PaedNER + ZELDA (500k)", "PaedNER + ZELDA (1M)", "no pretraining"]
+    label_order = ["PaedNER + ZELDA (100k)", "PaedNER + ZELDA (500k)", "PaedNER + ZELDA (1M)", "baseline (no pre-training)"]
     for dataset, pretraining_dict in all_results.items():
         all_results[dataset] = {k: pretraining_dict[k] for k in label_order}
 
@@ -627,10 +627,11 @@ def main_experiments_low_resource(base_path, add_graph: bool = False):
 
     if add_graph:
         plt.style.use("seaborn")
-        plt.rcParams['axes.labelsize'] = 14
-        plt.rcParams['axes.titlesize'] = 14
-        plt.rcParams['xtick.labelsize'] = 14
-        plt.rcParams['ytick.labelsize'] = 14
+        plt.rcParams['axes.labelsize'] = 20
+        plt.rcParams['axes.titlesize'] = 20
+        plt.rcParams['xtick.labelsize'] = 20
+        plt.rcParams['ytick.labelsize'] = 20
+        plt.rcParams['legend.title_fontsize'] = 20
 
         order = ["conll_03", "wnut_17", "ontonotes", "fewnerdcoarse", "fewnerdfine"]
         display_names = {
@@ -642,10 +643,10 @@ def main_experiments_low_resource(base_path, add_graph: bool = False):
         }
 
         colors = {
-            "no pretraining": plt.rcParams['axes.prop_cycle'].by_key()['color'][2],
-            "bert-base-uncased (100k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][3],
-            "bert-base-uncased (500k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
-            "bert-base-uncased (1M)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+            "baseline (no pre-training)": plt.rcParams['axes.prop_cycle'].by_key()['color'][2],
+            "PaedNER + ZELDA (100k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][3],
+            "PaedNER + ZELDA (500k)": plt.rcParams['axes.prop_cycle'].by_key()['color'][1],
+            "PaedNER + ZELDA (1M)": plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
         }
 
         formatted_all_results = {display_names.get(k): all_results.get(k) for k in order}
@@ -655,9 +656,9 @@ def main_experiments_low_resource(base_path, add_graph: bool = False):
             if i < 3:
                 ax = plt.subplot(gs[0, 4 * i:4 * i + 4])
             else:
-                ax = plt.subplot(gs[1, 4 * i - 10:4 * i - 10 + 4])
+                ax = plt.subplot(gs[1, 4 * i - 12:4 * i - 12 + 4])
 
-            ax.set_title(datasets)
+            ax.set_title(datasets, fontweight="bold")
             ax.set_xlabel("k-shots")
             ax.set_ylabel("F1-score")
 
@@ -670,9 +671,9 @@ def main_experiments_low_resource(base_path, add_graph: bool = False):
                                  alpha=0.2, color=colors[model])
 
         handles, labels = ax.get_legend_handles_labels()
-        fig.legend(handles, labels, loc='center', bbox_to_anchor=(0.91, 0.25), fontsize="large")
+        fig.legend(handles, labels, title="Pre-training corpus:", loc='center', bbox_to_anchor=(0.83, 0.27), fontsize="20")
 
-        plt.tight_layout()
+        plt.tight_layout(pad=2.0)
         plt.show()
 
 
