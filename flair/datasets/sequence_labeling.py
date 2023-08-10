@@ -2577,7 +2577,6 @@ class NER_GERMAN_LEGAL(ColumnCorpus):
         :param base_path: Default is None, meaning that corpus gets auto-downloaded and loaded. You can override this
         to point to a different folder but typically this should not be necessary.
         :param in_memory: If True, keeps dataset in memory giving speedups in training. Not recommended due to heavy RAM usage.
-        :param document_as_sequence: If True, all sentences of a document are read into a single Sentence object
         """
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
 
@@ -2591,13 +2590,17 @@ class NER_GERMAN_LEGAL(ColumnCorpus):
 
         # download data if necessary
         ler_path = "https://raw.githubusercontent.com/elenanereiss/Legal-Entity-Recognition/master/data/"
-        cached_path(f"{ler_path}ler.conll", Path("datasets") / dataset_name)
+
+        for split in ["train", "dev", "test"]:
+            cached_path(f"{ler_path}ler_{split}.conll", Path("datasets") / dataset_name)
 
         super().__init__(
             data_folder,
             columns,
             in_memory=in_memory,
-            train_file="ler.conll",
+            train_file="ler_train.conll",
+            dev_file="ler_dev.conll",
+            test_file="ler_test.conll",
             **corpusargs,
         )
 
@@ -2973,7 +2976,7 @@ class NER_MASAKHANE(MultiCorpus):
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
 
         # if only one language is given
-        if type(languages) == str:
+        if isinstance(languages, str):
             languages = [languages]
 
         # column format
@@ -3246,7 +3249,7 @@ class NER_MULTI_WIKIANN(MultiCorpus):
         in_memory : bool, optional
             Specify that the dataset should be loaded in memory, which speeds up the training process but takes increases the RAM usage significantly.
         """
-        if type(languages) == str:
+        if isinstance(languages, str):
             languages = [languages]
 
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
@@ -3707,7 +3710,7 @@ class NER_MULTI_XTREME(MultiCorpus):
             ]
 
         # if only one language is given
-        if type(languages) == str:
+        if isinstance(languages, str):
             languages = [languages]
 
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
@@ -3799,7 +3802,7 @@ class NER_MULTI_WIKINER(MultiCorpus):
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
 
         # if only one language is given
-        if type(languages) == str:
+        if isinstance(languages, str):
             languages = [languages]
 
         # column format
@@ -4745,10 +4748,10 @@ class NER_NERMUD(MultiCorpus):
         """
         supported_domains = ["WN", "FIC", "ADG"]
 
-        if type(domains) == str and domains == "all":
+        if isinstance(domains, str) and domains == "all":
             domains = supported_domains
 
-        if type(domains) == str:
+        if isinstance(domains, str):
             domains = [domains]
 
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
