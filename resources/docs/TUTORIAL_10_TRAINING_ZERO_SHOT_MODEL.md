@@ -224,7 +224,7 @@ tars.switch_to_task("GO_EMOTIONS")
 
 # 4. Prepare a test sentence
 sentence = Sentence("I absolutely love this!")
-tars.predict(sentence)
+tars.predict
 print(sentence)
 ```
 The output should look like:

@@ -2,16 +2,81 @@ from typing import List, Tuple
 import logging
 
 import numpy as np
+import torch
 import torch.nn.functional as F
 
 import flair
-from flair.data import Sentence, Dictionary, DT, Span
+from flair.data import Sentence, Dictionary, DT, Span, Union, Optional
 from flair.embeddings import TokenEmbeddings, DocumentEmbeddings
 
 log = logging.getLogger("flair")
 
 
-class BINDER(flair.nn.Classifier[Sentence]):
+def get_masks(batch_size, num_types, seq_length, lengths):
+    lengths = lengths * 2 + 1
+
+    start_mask = torch.zeros(batch_size, num_types, seq_length, dtype=torch.bool, device=flair.device)
+    end_mask = torch.zeros(batch_size, num_types, seq_length, dtype=torch.bool, device=flair.device)
+    for i in range(seq_length):
+        start_mask[:, :, i] = i % 2
+        end_mask[:, :, i] = (i + 1) % 2
+
+    # Include CLS token
+    start_mask[:, :, 0] = 1
+    end_mask[:, :, 0] = 1
+
+    for i, length in enumerate(lengths):
+        start_mask[i, :, length:] = 0
+        end_mask[i, :, length:] = 0
+
+    span_mask = (start_mask.unsqueeze(-1) * end_mask.unsqueeze(-2)).triu()
+    span_mask[:, :, 0, 0] = 1
+    return start_mask, end_mask, span_mask
+
+
+def contrastive_loss(
+    scores: torch.FloatTensor,
+    positions: Union[List[int], Tuple[List[int], List[int]]],
+    mask: torch.FloatTensor = None,
+) -> torch.Tensor:
+    batch_size, seq_length = scores.size(0), scores.size(1)
+    if len(scores.shape) == 3:
+        scores = scores.view(batch_size, -1)
+        mask = mask.view(batch_size, -1)
+        log_probs = masked_log_softmax(scores, mask)
+        log_probs = log_probs.view(batch_size, seq_length, seq_length)
+        start_positions, end_positions = positions
+        batch_indices = list(range(batch_size))
+        log_probs = log_probs[batch_indices, start_positions, end_positions]
+    else:
+        log_probs = masked_log_softmax(scores, mask)
+        batch_indices = list(range(batch_size))
+        log_probs = log_probs[batch_indices, positions]
+    return - log_probs.mean()
+
+
+def masked_log_softmax(vector: torch.Tensor, mask: torch.BoolTensor, dim: int = -1) -> torch.Tensor:
+    if mask is not None:
+        while mask.dim() < vector.dim():
+            mask = mask.unsqueeze(1)
+        # vector + mask.log() is an easy way to zero out masked elements in logspace, but it
+        # results in nans when the whole vector is masked.  We need a very small value instead of a
+        # zero in the mask for these cases.
+        vector = vector + (mask + tiny_value_of_dtype(vector.dtype)).log()
+    return torch.nn.functional.log_softmax(vector, dim=dim)
+
+
+def tiny_value_of_dtype(dtype: torch.dtype) -> float:
+    if not dtype.is_floating_point:
+        raise TypeError("Only supports floating point dtypes.")
+    if dtype == torch.float or dtype == torch.double:
+        return 1e-13
+    elif dtype == torch.half:
+        return 1e-4
+    else:
+        raise TypeError("Does not support dtype " + str(dtype))
+
+class BinderModel(flair.nn.Classifier[Sentence]):
     """This model implements the BINDER architecture for token classification using contrastive learning and a bi-encoder.
     Paper: https://openreview.net/forum?id=9EAQVEINuum
     """
@@ -34,25 +99,39 @@ class BINDER(flair.nn.Classifier[Sentence]):
         ner_loss_weight: float = 0.5,
     ):
         super().__init__()
+        if not token_encoder.subtoken_pooling == "first_last":
+            raise RuntimeError("The token encoder must use first_last subtoken pooling when using BINDER model.")
+
+        if not token_encoder.document_embedding == True:
+            raise RuntimeError("The token encoder must include the CLS token when using BINDER model.")
+
         self.token_encoder = token_encoder
-        self.label_decoder = label_encoder
-        self._make_span_label_dictionary(label_dictionary)
-        self._label_type: str = label_type
+        self.label_encoder = label_encoder
+        self.label_dictionary = label_dictionary
+        self._label_type = label_type
 
         self.dropout = torch.nn.Dropout(dropout)
         self.label_start_linear = torch.nn.Linear(self.label_encoder.embedding_length, linear_size)
         self.label_end_linear = torch.nn.Linear(self.label_encoder.embedding_length, linear_size)
-        self.label_span_linear = torch.nn.Linear(self.label_decoder.embedding_length, linear_size)
-        self.token_start_linear = torch.nn.Linear(self.token_encoder.embedding_length, linear_size)
-        self.token_end_linear = torch.nn.Linear(self.token_encoder.embedding_length, linear_size)
+        self.label_span_linear = torch.nn.Linear(self.label_encoder.embedding_length, linear_size)
 
+        token_embedding_size = self.token_encoder.embedding_length // 2
+        self.token_start_linear = torch.nn.Linear(token_embedding_size, linear_size)
+        self.token_end_linear = torch.nn.Linear(token_embedding_size, linear_size)
+
+        self.max_span_width = max_span_width
         if use_span_width_embeddings:
-            self.span_width_embeddings = torch.nn.Embedding(
-                self.token_encoder.embedding_length * 2 + linear_size, linear_size
+            self.token_span_linear = torch.nn.Linear(
+                self.token_encoder.embedding_length + linear_size, linear_size
             )
-            self.width_embeddings = torch.nn.Embedding(max_span_width, linear_size, padding_idx=0)
+            assert (self.token_encoder.model.config.max_position_embeddings ==
+                    self.label_encoder.model.config.max_position_embeddings), \
+                "The maximum position embeddings for the token encoder and label encoder must be the same when using " \
+                "span width embeddings."
+            span_width = self.token_encoder.model.config.max_position_embeddings
+            self.width_embeddings = torch.nn.Embedding(span_width, linear_size, padding_idx=0)
         else:
-            self.span_linear = torch.nn.Linear(self.token_encoder.embedding_length * 2, linear_size)
+            self.token_span_linear = torch.nn.Linear(self.token_encoder.embedding_length, linear_size)
             self.width_embeddings = None
 
         self.start_logit_scale = torch.nn.Parameter(torch.ones([]) * np.log(1 / init_temperature))
@@ -67,111 +146,150 @@ class BINDER(flair.nn.Classifier[Sentence]):
 
         self.to(flair.device)
 
+    def label_type(self):
+        return self._label_type
+
     def forward_loss(self, data_points: List[DT]) -> Tuple[torch.Tensor, int]:
         """Forwards the BINDER model and returns the combined loss."""
-        # Quality checks + get gold labels
-        if len(data_points) == 0:
+        # Quality checks
+        if len(data_points) == 0 or not [spans for sentence in data_points for spans in sentence.get_spans()]:
             return torch.tensor(0.0, dtype=torch.float, device=flair.device, requires_grad=True), 0
         sentences = [data_points] if not isinstance(data_points, list) else data_points
-        gold_labels = self._get_gold_labels(sentences)
 
-        # Get hidden states for tokens and labels
+        # Get hidden states for tokens in shape batch_size x seq_length x hidden_size
         self.token_encoder.embed(sentences)
-        lengths, token_hidden = self._get_token_hidden_states(sentences)
+        lengths, token_hidden_states = self._get_token_hidden_states(sentences)
 
+        # Get hidden states for labels in shape num_types x hidden_size
         labels = [Sentence(label) for label in self.label_dictionary.get_items()]
         self.label_encoder.embed(labels)
-        label_hidden = torch.cat([label.get_embedding() for label in labels])
+        label_hidden_states = torch.stack([label.get_embedding() for label in labels])
 
-        # get shapes
-        batch_size, seq_length, _ = token_hidden.size()
-        num_types, _ = label_hidden.size()
+        # Extract shapes
+        batch_size, org_seq_length, _ = token_hidden_states.size()
+        seq_length = org_seq_length * 2 + 1
+        num_types, _ = label_hidden_states.size()
+        hidden_size = self.token_encoder.embedding_length // 2
 
-        # num_types x hidden_size
-        label_start_output = F.normalize(self.dropout(self.type_start_linear(label_hidden)), dim=-1)
-        label_end_output = F.normalize(self.dropout(self.type_end_linear(label_hidden)), dim=-1)
-        # batch_size x seq_length x hidden_size
-        token_start_output = F.normalize(self.dropout(self.start_linear(token_hidden)), dim=-1)
-        token_end_output = F.normalize(self.dropout(self.end_linear(token_hidden)), dim=-1)
+        token_hidden_states = token_hidden_states.view(batch_size, org_seq_length, 2, hidden_size).view(batch_size, 2 * org_seq_length, hidden_size)
+        cls_hidden_state = torch.stack([sentence.get_embedding() for sentence in data_points])
+        # Shape: batch_size x seq_length * 2 (start + end hidden state per token) + 1 (CLS token embedding) x
+        # hidden_size // 2 (split the concatenated hidden state in half)
+        token_hidden_states = torch.cat([cls_hidden_state.unsqueeze(1), token_hidden_states], dim=1)
 
-        # batch_size x num_types x seq_length
+        # Reproject + dropout + normalize label hidden states - final shape: num_types x hidden_size
+        label_start_output = F.normalize(self.dropout(self.label_start_linear(label_hidden_states)), dim=-1)
+        label_end_output = F.normalize(self.dropout(self.label_end_linear(label_hidden_states)), dim=-1)
+        # Reproject + dropout + normalize label hidden states - final shape: batch_size x seq_length x hidden_size
+        token_start_output = F.normalize(self.dropout(self.token_start_linear(token_hidden_states)), dim=-1)
+        token_end_output = F.normalize(self.dropout(self.token_end_linear(token_hidden_states)), dim=-1)
+
+        # obtain start scores for threshold loss - shape: batch_size x num_types x seq_length
         start_scores = self.start_logit_scale.exp() * label_start_output.unsqueeze(0) @ token_start_output.transpose(1, 2)
         end_scores = self.end_logit_scale.exp() * label_end_output.unsqueeze(0) @ token_end_output.transpose(1, 2)
 
-        # batch_size x seq_length x seq_length x hidden_size*2
-        span_output = torch.cat(
+        # get span outputs by concat - shape: batch_size x seq_length x seq_length x hidden_size*2
+        token_span_output = torch.cat(
             [
-                token_hidden.unsqueeze(2).expand(-1, -1, seq_length, -1),
-                token_hidden.unsqueeze(1).expand(-1, seq_length, -1, -1),
+                token_hidden_states.unsqueeze(2).expand(-1, -1, seq_length, -1),
+                token_hidden_states.unsqueeze(1).expand(-1, seq_length, -1, -1),
             ],
             dim=3
         )
 
-        # span_width_embeddings
+        # If using width_embeddings, add them to the span_output
         if self.width_embeddings is not None:
-            range_vector = torch.cuda.LongTensor(seq_length, device=token_hidden.device).fill_(1).cumsum(0) - 1
+            range_vector = torch.cuda.LongTensor(seq_length, device=token_hidden_states.device).fill_(1).cumsum(0) - 1
             span_width = range_vector.unsqueeze(0) - range_vector.unsqueeze(1) + 1
             # seq_length x seq_length x hidden_size
             span_width_embeddings = self.width_embeddings(span_width * (span_width > 0))
-            span_output = torch.cat([
-                span_output, span_width_embeddings.unsqueeze(0).expand(batch_size, -1, -1, -1)], dim=3)
+            token_span_output = torch.cat([
+                token_span_output, span_width_embeddings.unsqueeze(0).expand(batch_size, -1, -1, -1)], dim=3)
 
-        # batch_size x seq_length x seq_length x hidden_size
-        span_linear_output = F.normalize(
-            self.dropout(self.span_linear(span_output)).view(batch_size, seq_length * seq_length, -1), dim=-1
+        # Reproject span outputs - shape: batch_size x seq_length x seq_length x hidden_size
+        token_span_linear_output = F.normalize(
+            self.dropout(self.token_span_linear(token_span_output)).view(batch_size, seq_length * seq_length, -1),
+            dim=-1
         )
-        # num_types x hidden_size
-        label_linear_out = F.normalize(self.dropout(self.type_span_linear(label_hidden)), dim=-1)
 
-        # batch_size x num_types x seq_length x seq_length
-        span_scores = self.span_logit_scale.exp() * label_linear_out.unsqueeze(0) @ span_linear_output.transpose(1, 2)
+        # Reproject label embeddings with span linear - shape: num_types x hidden_size
+        label_span_linear_output = F.normalize(self.dropout(self.label_span_linear(label_hidden_states)), dim=-1)
+
+        # Obtain the span scores - shape: batch_size x num_types x seq_length x seq_length
+        span_scores = self.span_logit_scale.exp() * label_span_linear_output.unsqueeze(0) @ token_span_linear_output.transpose(1, 2)
         span_scores = span_scores.view(batch_size, num_types, seq_length, seq_length)
 
+        # Flatten first dimension for scores
         flat_start_scores = start_scores.view(batch_size * num_types, seq_length)
         flat_end_scores = end_scores.view(batch_size * num_types, seq_length)
         flat_span_scores = span_scores.view(batch_size * num_types, seq_length, seq_length)
 
+        # Extract all spans from data points. Sequence IDS indicate the index of the sentence in the batch.
+        sequence_ids, spans = zip(*[(idx, span) for idx, sentence in enumerate(sentences) for span in sentence.get_spans(self._label_type)])
+        # Since we use start and end embeddings seperately, we need to adjust the index of the start and end token
+        span_start_positions = [span.tokens[0].idx * 2 - 1 for span in spans]
+        span_end_positions = [span.tokens[-1].idx * 2 for span in spans]
+        span_types_str = [span.get_label(self._label_type).value for span in spans]
+        span_types_id = [self.label_dictionary.get_idx_for_item(span_type) for span_type in span_types_str]
 
+        start_mask, end_mask, span_mask = get_masks(batch_size, num_types, seq_length, lengths)
 
-        #TODO: convert predictions into spans at right point
+        # Mask the spans for threshold loss
+        start_mask[sequence_ids, span_types_id, span_start_positions] = 0
+        end_mask[sequence_ids, span_types_id, span_end_positions] = 0
+        span_mask[sequence_ids, span_types_id, span_start_positions, span_end_positions] = 0
 
+        start_mask = start_mask.view(batch_size * num_types, seq_length)
+        end_mask = end_mask.view(batch_size * num_types, seq_length)
+        span_mask = span_mask.view(batch_size * num_types, seq_length, seq_length)
 
+        start_threshold_loss = contrastive_loss(flat_start_scores, [0], start_mask)
+        end_threshold_loss = contrastive_loss(flat_end_scores, [0], end_mask)
+        span_threshold_loss = contrastive_loss(flat_span_scores, [0, 0], span_mask)
 
-        return
+        threshold_loss = (
+                self.start_loss_weight * start_threshold_loss +
+                self.end_loss_weight * end_threshold_loss +
+                self.span_loss_weight * span_threshold_loss
+        )
 
-    def _make_span_label_dictionary(self, label_dictionary: Dictionary, allow_unk_predictions: bool = False):
-        # span-labels need special encoding (BIO or BIOES)
-        if label_dictionary.span_labels:
-            # the big question is whether the label dictionary should contain an UNK or not
-            # without UNK, we cannot evaluate on data that contains labels not seen in test
-            # with UNK, the model learns less well if there are no UNK examples
-            self.span_dictionary = Dictionary(add_unk=allow_unk_predictions)
-            assert self.tag_format in ["BIOES", "BIO"]
-            for label in label_dictionary.get_items():
-                if label == "<unk>":
-                    continue
-                self.span_dictionary.add_item("O")
-                if self.tag_format == "BIOES":
-                    self.span_dictionary.add_item("S-" + label)
-                    self.span_dictionary.add_item("B-" + label)
-                    self.span_dictionary.add_item("E-" + label)
-                    self.span_dictionary.add_item("I-" + label)
-                if self.tag_format == "BIO":
-                    self.span_dictionary.add_item("B-" + label)
-                    self.span_dictionary.add_item("I-" + label)
-        else:
-            self.span_dictionary = label_dictionary
+        start_mask = start_mask.view(batch_size, num_types, seq_length)
+        end_mask = end_mask.view(batch_size, num_types, seq_length)
+        span_mask = span_mask.view(batch_size, num_types, seq_length, seq_length)
 
-        self.label_dictionary = label_dictionary
+        start_mask[sequence_ids, span_types_id, span_start_positions] = 1
+        end_mask[sequence_ids, span_types_id, span_end_positions] = 1
+        span_mask[sequence_ids, span_types_id, span_start_positions, span_end_positions] = 1
 
-        # is this a span prediction problem?
-        if any(item.startswith(("B-", "S-", "I-")) for item in self.span_dictionary.get_items()):
-            self.predict_spans = True
-        else:
-            self.predict_spans = False
+        start_loss = contrastive_loss(start_scores[sequence_ids, span_types_id], span_start_positions, start_mask[sequence_ids, span_types_id])
+        end_loss = contrastive_loss(end_scores[sequence_ids, span_types_id], span_end_positions, end_mask[sequence_ids, span_types_id])
+        span_loss = contrastive_loss(
+            span_scores[sequence_ids, span_types_id],
+            (span_start_positions, span_end_positions),
+            span_mask[sequence_ids, span_types_id]
+        )
 
-        self.tagset_size = len(self.span_dictionary)
-        log.info(f"BINDER model predicts: {self.span_dictionary}")
+        total_loss = (
+                self.start_loss_weight * start_loss +
+                self.end_loss_weight * end_loss +
+                self.span_loss_weight * span_loss
+        )
+
+        total_loss = self.ner_loss_weight * total_loss + self.threshold_loss_weight * threshold_loss
+
+        return total_loss, len(spans)
+
+    def predict(
+        self,
+        sentences: Union[List[DT], DT],
+        mini_batch_size: int = 32,
+        return_probabilities_for_all_classes: bool = False,
+        verbose: bool = False,
+        label_name: Optional[str] = None,
+        return_loss=False,
+        embedding_storage_mode="none",
+    ):
+        return None
 
     def _get_token_hidden_states(self, sentences: List[Sentence]) -> Tuple[torch.LongTensor, torch.Tensor]:
         """Returns the token hidden states for the given sentences."""
@@ -179,8 +297,7 @@ class BINDER(flair.nn.Classifier[Sentence]):
         lengths: List[int] = [len(sentence.tokens) for sentence in sentences]
         longest_token_sequence_in_batch: int = max(lengths)
         pre_allocated_zero_tensor = torch.zeros(
-            self.embeddings.embedding_length * longest_token_sequence_in_batch,
-            dtype=self.linear.weight.dtype,
+            self.token_encoder.embedding_length * longest_token_sequence_in_batch,
             device=flair.device,
         )
         all_embs = []
@@ -189,48 +306,14 @@ class BINDER(flair.nn.Classifier[Sentence]):
             nb_padding_tokens = longest_token_sequence_in_batch - len(sentence)
 
             if nb_padding_tokens > 0:
-                t = pre_allocated_zero_tensor[: self.embeddings.embedding_length * nb_padding_tokens]
+                t = pre_allocated_zero_tensor[: self.token_encoder.embedding_length * nb_padding_tokens]
                 all_embs.append(t)
 
         sentence_tensor = torch.cat(all_embs).view(
             [
                 len(sentences),
                 longest_token_sequence_in_batch,
-                self.embeddings.embedding_length,
+                self.token_encoder.embedding_length,
             ]
         )
         return torch.LongTensor(lengths), sentence_tensor
-
-    def _get_gold_labels(self, sentences: List[Sentence]) -> torch.Tensor:
-        if self.label_dictionary.span_labels:
-            all_sentence_labels = []
-            for sentence in sentences:
-                sentence_labels = ["O"] * len(sentence)
-                for label in sentence.get_labels(self.label_type):
-                    span: Span = label.data_point
-                    if self.tag_format == "BIOES":
-                        if len(span) == 1:
-                            sentence_labels[span[0].idx - 1] = "S-" + label.value
-                        else:
-                            sentence_labels[span[0].idx - 1] = "B-" + label.value
-                            sentence_labels[span[-1].idx - 1] = "E-" + label.value
-                            for i in range(span[0].idx, span[-1].idx - 1):
-                                sentence_labels[i] = "I-" + label.value
-                    else:
-                        sentence_labels[span[0].idx - 1] = "B-" + label.value
-                        for i in range(span[0].idx, span[-1].idx):
-                            sentence_labels[i] = "I-" + label.value
-                all_sentence_labels.extend(sentence_labels)
-            gold_labels = all_sentence_labels
-
-        # all others are regular labels for each token
-        else:
-            gold_labels = [token.get_label(self.label_type, "O").value for sentence in sentences for token in sentence]
-
-        labels = torch.tensor(
-            [self.label_dictionary.get_idx_for_item(label) for label in gold_labels],
-            dtype=torch.long,
-            device=flair.device,
-        )
-
-        return labels

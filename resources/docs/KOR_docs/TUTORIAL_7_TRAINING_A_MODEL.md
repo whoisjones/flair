@@ -66,7 +66,7 @@ model = SequenceTagger.load('resources/taggers/example-pos/final-model.pt')
 # 예시 문장 만들기
 sentence = Sentence('I love Berlin')
 # 태그 예측하고 출력하기
-model.predict(sentence)
+model.predict
 print(sentence.to_tagged_string())
 ```
 
@@ -221,7 +221,7 @@ classifier = TextClassifier.load('resources/taggers/question-classification-with
 # 예시 문장 만들기
 sentence = Sentence('Who built the Eiffel Tower ?')
 # 클래스를 예측하고 출력하기
-classifier.predict(sentence)
+classifier.predict
 print(sentence.labels)
 ```
 

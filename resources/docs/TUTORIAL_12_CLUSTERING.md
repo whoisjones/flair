@@ -153,7 +153,7 @@ model = ClusteringModel.load(model_file="clustering_model.pt")
 corpus = TREC_6(memory_mode='full').downsample(0.05)
 
 # predict the corpus
-model.predict(corpus)
+model.predict
 ````
 
 ---------------------

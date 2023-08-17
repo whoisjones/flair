@@ -21,7 +21,7 @@ tagger = SequenceTagger.load('ner')
 sentence = Sentence('George Washington went to Washington.')
 
 # NER 태그 예측
-tagger.predict(sentence)
+tagger.predict
 
 # 예측된 태그가 있는 문장 출력
 print(sentence.to_tagged_string())
@@ -82,7 +82,7 @@ tagger = MultiTagger.load(['pos', 'ner'])
 sentence = Sentence("George Washington went to Washington.")
 
 # 두 모델로 예측
-tagger.predict(sentence)
+tagger.predict
 
 print(sentence)
 ```
@@ -175,7 +175,7 @@ tagger = SequenceTagger.load('de-ner')
 sentence = Sentence('George Washington ging nach Washington.')
 
 # NER 태그 예측
-tagger.predict(sentence)
+tagger.predict
 
 # 예측된 태그가 있는 문장 출력
 print(sentence.to_tagged_string())
@@ -189,6 +189,7 @@ George <B-PER> Washington <E-PER> ging nach Washington <S-LOC> .
 ### 아랍어 문장 태그 지정
 
 Flair는 또한 오른쪽에서 왼쪽으로 쓰는 언어에서도 작동한다. 아랍어 문장에 태그를 지정하려면 적절한 모델을 로드하면 됩니다.
+
 ```python
 
 # 모델 로드
@@ -198,7 +199,7 @@ tagger = SequenceTagger.load('ar-ner')
 sentence = Sentence("احب برلين")
 
 # NER 태그 예측
-tagger.predict(sentence)
+tagger.predict
 
 # 예측된 태그가 있는 문장 출력
 for entity in sentence.get_labels('ner'):
@@ -223,7 +224,7 @@ tagger = SequenceTagger.load('pos-multi')
 sentence = Sentence('George Washington went to Washington. Dort kaufte er einen Hut.')
 
 # PoS 태그 예측
-tagger.predict(sentence)
+tagger.predict
 
 # 예측된 태그가 있는 문장 출력
 print(sentence.to_tagged_string())
@@ -254,8 +255,8 @@ sentence_1 = Sentence('George returned to Berlin to return his hat.')
 sentence_2 = Sentence('He had a look at different hats.')
 
 # NER 태그 예측하기
-tagger.predict(sentence_1)
-tagger.predict(sentence_2)
+tagger.predict
+tagger.predict
 
 # 예측된 태그가 있는 문장 출력
 print(sentence_1.to_tagged_string())
@@ -328,7 +329,7 @@ classifier = TextClassifier.load('sentiment')
 sentence = Sentence("enormously entertaining for moviegoers of any age.")
 
 # predict 호출
-classifier.predict(sentence)
+classifier.predict
 
 # 예측 확인하기
 print(sentence)

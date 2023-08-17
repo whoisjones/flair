@@ -189,7 +189,7 @@ print(f"Existing tasks are: {existing_tasks}")
 tars.switch_to_task("GO_EMOTIONS")
 # 4. 테스트 문장 준비하기
 sentence = Sentence("I absolutely love this!")
-tars.predict(sentence)
+tars.predict
 print(sentence)
 ```
 출력은 다음과 같습니다:

@@ -14,13 +14,14 @@ tagger = Classifier.load("hunflair")
 All you need to do is use the predict() method of the tagger on a sentence.
 This will add predicted tags to the tokens in the sentence.
 Lets use a sentence with four named entities:
+
 ```python
 from flair.data import Sentence
 
 sentence = Sentence("Behavioral abnormalities in the Fmr1 KO2 Mouse Model of Fragile X Syndrome")
 
 # predict NER tags
-tagger.predict(sentence)
+tagger.predict
 
 # print sentence with predicted tags
 print(sentence)
@@ -115,6 +116,7 @@ abstract = "Fragile X syndrome (FXS) is a developmental disorder caused by a mut
 
 To work with complete abstracts or full-text, we first have to split them into separate sentences.
 Again we can apply the integration of the [SciSpaCy](https://allenai.github.io/scispacy/) library:
+
 ```python
 from flair.splitter import SciSpacySentenceSplitter
 
@@ -125,7 +127,7 @@ splitter = SciSpacySentenceSplitter()
 sentences = splitter.split(abstract)
 
 # you can apply the HunFlair tagger directly to this list
-tagger.predict(sentences)
+tagger.predict
 ```
 We can access the annotations of the single sentences by just iterating over the list:
 ```python

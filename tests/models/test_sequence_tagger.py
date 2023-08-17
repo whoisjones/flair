@@ -47,7 +47,7 @@ class TestSequenceTagger(BaseModelTest):
 
     @pytest.mark.integration()
     def test_all_tag_proba_embedding(self, example_sentence, loaded_pretrained_model):
-        loaded_pretrained_model.predict(example_sentence, return_probabilities_for_all_classes=True)
+        loaded_pretrained_model.predict
         for token in example_sentence:
             assert len(token.get_tags_proba_dist(loaded_pretrained_model.label_type)) == len(
                 loaded_pretrained_model.label_dictionary
@@ -60,7 +60,7 @@ class TestSequenceTagger(BaseModelTest):
 
     @pytest.mark.integration()
     def test_force_token_predictions(self, example_sentence, loaded_pretrained_model):
-        loaded_pretrained_model.predict(example_sentence, force_token_predictions=True)
+        loaded_pretrained_model.predict
         assert example_sentence.get_token(3).text == "Berlin"
         assert example_sentence.get_token(3).tag == "S-LOC"
 

@@ -34,8 +34,9 @@ This creates a file `flert-embeddings.onnx` which stores the exported Onnx Model
 The providers referenced are part of your production environment and are documented [here](https://onnxruntime.ai/docs/execution-providers/)
 
 The usage for predictions is the same as before:
+
 ```python
-model.predict(sentences)
+model.predict
 ```
 ### Optimization
 

@@ -65,7 +65,7 @@ class TestTextClassifier(BaseModelTest):
 
     @pytest.mark.integration()
     def test_predict_with_prob(self, example_sentence, loaded_pretrained_model):
-        loaded_pretrained_model.predict(example_sentence, return_probabilities_for_all_classes=True)
+        loaded_pretrained_model.predict
         assert len(example_sentence.get_labels(loaded_pretrained_model.label_type)) == len(
             loaded_pretrained_model.label_dictionary
         )

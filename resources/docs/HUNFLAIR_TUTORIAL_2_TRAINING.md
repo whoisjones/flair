@@ -64,16 +64,18 @@ trainer.train(
 ```
 Once the model is trained you can use it to predict tags for new sentences.
 Just call the predict method of the model.
+
 ```python
 # load the model you trained
 model = SequenceTagger.load("taggers/ncbi-disease/best-model.pt")
 
 # create example sentence
 from flair.data import Sentence
+
 sentence = Sentence("Women who smoke 20 cigarettes a day are four times more likely to develop breast cancer.")
 
 # predict tags and print
-model.predict(sentence)
+model.predict
 
 print(sentence.to_tagged_string())
 ```
