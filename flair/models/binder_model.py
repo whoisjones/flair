@@ -8,30 +8,9 @@ import torch.nn.functional as F
 import flair
 from flair.data import Sentence, Dictionary, DT, Span, Union, Optional
 from flair.embeddings import TokenEmbeddings, DocumentEmbeddings
+from flair.training_utils import store_embeddings
 
 log = logging.getLogger("flair")
-
-
-def get_masks(batch_size, num_types, seq_length, lengths):
-    lengths = lengths * 2 + 1
-
-    start_mask = torch.zeros(batch_size, num_types, seq_length, dtype=torch.bool, device=flair.device)
-    end_mask = torch.zeros(batch_size, num_types, seq_length, dtype=torch.bool, device=flair.device)
-    for i in range(seq_length):
-        start_mask[:, :, i] = i % 2
-        end_mask[:, :, i] = (i + 1) % 2
-
-    # Include CLS token
-    start_mask[:, :, 0] = 1
-    end_mask[:, :, 0] = 1
-
-    for i, length in enumerate(lengths):
-        start_mask[i, :, length:] = 0
-        end_mask[i, :, length:] = 0
-
-    span_mask = (start_mask.unsqueeze(-1) * end_mask.unsqueeze(-2)).triu()
-    span_mask[:, :, 0, 0] = 1
-    return start_mask, end_mask, span_mask
 
 
 def contrastive_loss(
@@ -146,6 +125,7 @@ class BinderModel(flair.nn.Classifier[Sentence]):
 
         self.to(flair.device)
 
+    @property
     def label_type(self):
         return self._label_type
 
@@ -154,8 +134,56 @@ class BinderModel(flair.nn.Classifier[Sentence]):
         # Quality checks
         if len(data_points) == 0 or not [spans for sentence in data_points for spans in sentence.get_spans()]:
             return torch.tensor(0.0, dtype=torch.float, device=flair.device, requires_grad=True), 0
-        sentences = [data_points] if not isinstance(data_points, list) else data_points
 
+        data_points = [data_points] if not isinstance(data_points, list) else data_points
+
+        # Encode data points
+        start_scores, end_scores, span_scores, lengths = self._encode_data_points(data_points)
+
+        assert start_scores.shape == end_scores.shape, "Start and end scores must have the same shape."
+        assert span_scores.shape[2] == span_scores.shape[3], "Span scores must be square."
+
+        # Get spans
+        start_mask, end_mask, span_mask = self._get_masks(
+            start_scores.size(),
+            lengths
+        )
+
+        # Calculate loss
+        total_loss, num_spans = self._calculate_loss(
+            data_points, start_scores, end_scores, span_scores, start_mask, end_mask, span_mask
+        )
+
+        return total_loss, num_spans
+
+    def _get_token_hidden_states(self, sentences: List[Sentence]) -> Tuple[torch.LongTensor, torch.Tensor]:
+        """Returns the token hidden states for the given sentences."""
+        names = self.token_encoder.get_names()
+        lengths: List[int] = [len(sentence.tokens) for sentence in sentences]
+        longest_token_sequence_in_batch: int = max(lengths)
+        pre_allocated_zero_tensor = torch.zeros(
+            self.token_encoder.embedding_length * longest_token_sequence_in_batch,
+            device=flair.device,
+        )
+        all_embs = []
+        for sentence in sentences:
+            all_embs += [emb for token in sentence for emb in token.get_each_embedding(names)]
+            nb_padding_tokens = longest_token_sequence_in_batch - len(sentence)
+
+            if nb_padding_tokens > 0:
+                t = pre_allocated_zero_tensor[: self.token_encoder.embedding_length * nb_padding_tokens]
+                all_embs.append(t)
+
+        sentence_tensor = torch.cat(all_embs).view(
+            [
+                len(sentences),
+                longest_token_sequence_in_batch,
+                self.token_encoder.embedding_length,
+            ]
+        )
+        return torch.LongTensor(lengths), sentence_tensor
+
+    def _encode_data_points(self, sentences) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # Get hidden states for tokens in shape batch_size x seq_length x hidden_size
         self.token_encoder.embed(sentences)
         lengths, token_hidden_states = self._get_token_hidden_states(sentences)
@@ -172,7 +200,7 @@ class BinderModel(flair.nn.Classifier[Sentence]):
         hidden_size = self.token_encoder.embedding_length // 2
 
         token_hidden_states = token_hidden_states.view(batch_size, org_seq_length, 2, hidden_size).view(batch_size, 2 * org_seq_length, hidden_size)
-        cls_hidden_state = torch.stack([sentence.get_embedding() for sentence in data_points])
+        cls_hidden_state = torch.stack([sentence.get_embedding() for sentence in sentences])
         # Shape: batch_size x seq_length * 2 (start + end hidden state per token) + 1 (CLS token embedding) x
         # hidden_size // 2 (split the concatenated hidden state in half)
         token_hidden_states = torch.cat([cls_hidden_state.unsqueeze(1), token_hidden_states], dim=1)
@@ -219,6 +247,34 @@ class BinderModel(flair.nn.Classifier[Sentence]):
         span_scores = self.span_logit_scale.exp() * label_span_linear_output.unsqueeze(0) @ token_span_linear_output.transpose(1, 2)
         span_scores = span_scores.view(batch_size, num_types, seq_length, seq_length)
 
+        return start_scores, end_scores, span_scores, lengths
+
+    def _get_masks(self, scores_size, lengths):
+        batch_size, num_types, seq_length = scores_size
+        lengths = lengths * 2 + 1
+
+        start_mask = torch.zeros(batch_size, num_types, seq_length, dtype=torch.bool, device=flair.device)
+        end_mask = torch.zeros(batch_size, num_types, seq_length, dtype=torch.bool, device=flair.device)
+        for i in range(seq_length):
+            start_mask[:, :, i] = i % 2
+            end_mask[:, :, i] = (i + 1) % 2
+
+        # Include CLS token
+        start_mask[:, :, 0] = 1
+        end_mask[:, :, 0] = 1
+
+        for i, length in enumerate(lengths):
+            start_mask[i, :, length:] = 0
+            end_mask[i, :, length:] = 0
+
+        span_mask = (start_mask.unsqueeze(-1) * end_mask.unsqueeze(-2)).triu()
+        span_mask[:, :, 0, 0] = 1
+
+        return start_mask, end_mask, span_mask
+
+    def _calculate_loss(self, sentences, start_scores, end_scores, span_scores, start_mask, end_mask, span_mask):
+        batch_size, num_types, seq_length = start_scores.size()
+
         # Flatten first dimension for scores
         flat_start_scores = start_scores.view(batch_size * num_types, seq_length)
         flat_end_scores = end_scores.view(batch_size * num_types, seq_length)
@@ -231,8 +287,6 @@ class BinderModel(flair.nn.Classifier[Sentence]):
         span_end_positions = [span.tokens[-1].idx * 2 for span in spans]
         span_types_str = [span.get_label(self._label_type).value for span in spans]
         span_types_id = [self.label_dictionary.get_idx_for_item(span_type) for span_type in span_types_str]
-
-        start_mask, end_mask, span_mask = get_masks(batch_size, num_types, seq_length, lengths)
 
         # Mask the spans for threshold loss
         start_mask[sequence_ids, span_types_id, span_start_positions] = 0
@@ -289,31 +343,93 @@ class BinderModel(flair.nn.Classifier[Sentence]):
         return_loss=False,
         embedding_storage_mode="none",
     ):
+        with torch.no_grad():
+            start_scores, end_scores, span_scores, lengths = self._encode_data_points(sentences)
+
+            start_mask, end_mask, span_mask = self._get_masks(
+                start_scores.size(),
+                lengths
+            )
+
+            span_preds = torch.triu(span_scores > span_scores[:, :, 0:1, 0:1])
+            # Perform the element-wise logical operations
+            logical_and = start_mask.unsqueeze(3) & end_mask.unsqueeze(2) & span_preds
+
+            # Find the non-zero indices
+            sequence_ids, preds, start_indexes, end_indexes = torch.nonzero(logical_and, as_tuple=True)
+
+            # if anything could possibly be predicted
+            if len(sentences) > 0:
+                # remove previously predicted labels of this type
+                for idx, sentence in enumerate(sentences):
+                    sentence.remove_labels(label_name)
+
+                    spans_for_sentence = sequence_ids == idx
+
+                    if not spans_for_sentence.any():
+                        continue
+
+                    # get the spans
+                    predictions = []
+                    tokens = sentence.tokens
+
+                    # we revert back start and end predictions to token indices and to ignore CLS token in hidden states
+                    start_indexes_for_flair_sentence = start_indexes[spans_for_sentence] // 2
+                    end_indexes_for_flair_sentence = end_indexes[spans_for_sentence] // 2
+                    start_indexes_for_scores = start_indexes[spans_for_sentence]
+                    end_indexes_for_scores = end_indexes[spans_for_sentence]
+                    preds_for_sentence = preds[spans_for_sentence]
+
+                    for sentence_start_index, sentence_end_index, score_start_index, score_end_index, pred in zip(
+                            start_indexes_for_flair_sentence, end_indexes_for_flair_sentence, start_indexes_for_scores, end_indexes_for_scores, preds_for_sentence
+                    ):
+                        predictions.append({
+                            "span": Span(tokens[sentence_start_index:sentence_end_index]),
+                            "start": sentence_start_index,
+                            "end": sentence_end_index,
+                            "confidence": torch.nn.functional.softmax(span_scores[idx, :, score_start_index, score_end_index], dim=0)[pred].item(),
+                            "type": self.label_dictionary.get_item_for_index(pred),
+                        })
+
+                    # remove overlaps
+                    predictions = self._remove_overlaps(predictions)
+
+                    for prediction in predictions:
+                        span = prediction["span"]
+                        span.add_label(
+                            typename=label_name,
+                            value=prediction["type"],
+                            score=prediction["confidence"],
+                        )
+
+            store_embeddings(sentences, storage_mode=embedding_storage_mode)
+
+        if return_loss:
+            return self._calculate_loss(
+                sentences, start_scores, end_scores, span_scores, start_mask, end_mask, span_mask
+            )
+
         return None
 
-    def _get_token_hidden_states(self, sentences: List[Sentence]) -> Tuple[torch.LongTensor, torch.Tensor]:
-        """Returns the token hidden states for the given sentences."""
-        names = self.token_encoder.get_names()
-        lengths: List[int] = [len(sentence.tokens) for sentence in sentences]
-        longest_token_sequence_in_batch: int = max(lengths)
-        pre_allocated_zero_tensor = torch.zeros(
-            self.token_encoder.embedding_length * longest_token_sequence_in_batch,
-            device=flair.device,
-        )
-        all_embs = []
-        for sentence in sentences:
-            all_embs += [emb for token in sentence for emb in token.get_each_embedding(names)]
-            nb_padding_tokens = longest_token_sequence_in_batch - len(sentence)
+    @staticmethod
+    def _remove_overlaps(predictions):
+        # Sort the predictions based on the start values
+        sorted_predictions = sorted(predictions, key=lambda x: x['start'])
 
-            if nb_padding_tokens > 0:
-                t = pre_allocated_zero_tensor[: self.token_encoder.embedding_length * nb_padding_tokens]
-                all_embs.append(t)
+        # Initialize a list to store non-overlapping predictions
+        non_overlapping = []
 
-        sentence_tensor = torch.cat(all_embs).view(
-            [
-                len(sentences),
-                longest_token_sequence_in_batch,
-                self.token_encoder.embedding_length,
-            ]
-        )
-        return torch.LongTensor(lengths), sentence_tensor
+        for prediction in sorted_predictions:
+            if not non_overlapping:
+                non_overlapping.append(prediction)
+            else:
+                # Check for overlap with the last prediction in the non-overlapping list
+                last_prediction = non_overlapping[-1]
+                if prediction['start'] > last_prediction['end']:
+                    non_overlapping.append(prediction)
+                else:
+                    # Handle the overlap, e.g., by choosing the one with higher confidence
+                    if prediction['confidence'] > last_prediction['confidence']:
+                        non_overlapping[-1] = prediction  # Replace the last prediction
+
+        return non_overlapping
