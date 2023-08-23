@@ -560,9 +560,11 @@ class ColumnDataset(FlairDataset):
             # check the first 5 sentences
             probe = []
             for _i in range(5):
-                sentence = self._convert_lines_to_sentence(
-                    self._read_next_sentence(file), word_level_tag_columns=column_name_map
-                )
+                next_sentence = self._read_next_sentence(file)
+                if len(next_sentence) == 0:
+                    break
+
+                sentence = self._convert_lines_to_sentence(next_sentence, word_level_tag_columns=column_name_map)
                 if sentence:
                     probe.append(sentence)
                 else:
@@ -2575,7 +2577,6 @@ class NER_GERMAN_LEGAL(ColumnCorpus):
         :param base_path: Default is None, meaning that corpus gets auto-downloaded and loaded. You can override this
         to point to a different folder but typically this should not be necessary.
         :param in_memory: If True, keeps dataset in memory giving speedups in training. Not recommended due to heavy RAM usage.
-        :param document_as_sequence: If True, all sentences of a document are read into a single Sentence object
         """
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
 
@@ -2589,13 +2590,17 @@ class NER_GERMAN_LEGAL(ColumnCorpus):
 
         # download data if necessary
         ler_path = "https://raw.githubusercontent.com/elenanereiss/Legal-Entity-Recognition/master/data/"
-        cached_path(f"{ler_path}ler.conll", Path("datasets") / dataset_name)
+
+        for split in ["train", "dev", "test"]:
+            cached_path(f"{ler_path}ler_{split}.conll", Path("datasets") / dataset_name)
 
         super().__init__(
             data_folder,
             columns,
             in_memory=in_memory,
-            train_file="ler.conll",
+            train_file="ler_train.conll",
+            dev_file="ler_dev.conll",
+            test_file="ler_test.conll",
             **corpusargs,
         )
 
@@ -2971,7 +2976,7 @@ class NER_MASAKHANE(MultiCorpus):
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
 
         # if only one language is given
-        if type(languages) == str:
+        if isinstance(languages, str):
             languages = [languages]
 
         # column format
@@ -3244,7 +3249,7 @@ class NER_MULTI_WIKIANN(MultiCorpus):
         in_memory : bool, optional
             Specify that the dataset should be loaded in memory, which speeds up the training process but takes increases the RAM usage significantly.
         """
-        if type(languages) == str:
+        if isinstance(languages, str):
             languages = [languages]
 
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
@@ -3705,7 +3710,7 @@ class NER_MULTI_XTREME(MultiCorpus):
             ]
 
         # if only one language is given
-        if type(languages) == str:
+        if isinstance(languages, str):
             languages = [languages]
 
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
@@ -3797,7 +3802,7 @@ class NER_MULTI_WIKINER(MultiCorpus):
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
 
         # if only one language is given
-        if type(languages) == str:
+        if isinstance(languages, str):
             languages = [languages]
 
         # column format
@@ -4743,10 +4748,10 @@ class NER_NERMUD(MultiCorpus):
         """
         supported_domains = ["WN", "FIC", "ADG"]
 
-        if type(domains) == str and domains == "all":
+        if isinstance(domains, str) and domains == "all":
             domains = supported_domains
 
-        if type(domains) == str:
+        if isinstance(domains, str):
             domains = [domains]
 
         base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
@@ -4789,4 +4794,105 @@ class NER_NERMUD(MultiCorpus):
             corpora,
             sample_missing_splits=False,
             name="nermud",
+        )
+
+
+class MASAKHA_POS(MultiCorpus):
+    def __init__(
+        self,
+        languages: Union[str, List[str]] = "bam",
+        version: str = "v1",
+        base_path: Optional[Union[str, Path]] = None,
+        in_memory: bool = True,
+        **corpusargs,
+    ) -> None:
+        """Initialize the MasakhaPOS corpus available on https://github.com/masakhane-io/masakhane-pos.
+
+        It consists of 20 African languages. Pass a language code or a list of language codes to initialize the corpus
+        with the languages you require. If you pass "all", all languages will be initialized.
+        :version: Specifies version of the dataset. Currently, only "v1" is supported.
+        :param base_path: Default is None, meaning that corpus gets auto-downloaded and loaded. You can override this
+        to point to a different folder but typically this should not be necessary.
+        :param in_memory: If True, keeps dataset in memory giving speedups in training.
+        """
+        base_path = flair.cache_root / "datasets" if not base_path else Path(base_path)
+
+        # if only one language is given
+        if isinstance(languages, str):
+            languages = [languages]
+
+        # column format
+        columns = {0: "text", 1: "pos"}
+
+        # this dataset name
+        dataset_name = self.__class__.__name__.lower()
+
+        supported_versions = ["v1"]
+
+        if version not in supported_versions:
+            log.error(f"The specified version '{version}' is not in the list of supported version!")
+            log.error(f"Supported versions are '{supported_versions}'!")
+            raise Exception
+
+        data_folder = base_path / dataset_name / version
+
+        supported_languages = [
+            "bam",
+            "bbj",
+            "ewe",
+            "fon",
+            "hau",
+            "ibo",
+            "kin",
+            "lug",
+            "mos",
+            "pcm",
+            "nya",
+            "sna",
+            "swa",
+            "twi",
+            "wol",
+            "xho",
+            "yor",
+            "zul",
+        ]
+
+        data_paths = {
+            "v1": "https://raw.githubusercontent.com/masakhane-io/masakhane-pos/main/data",
+        }
+
+        # use all languages if explicitly set to "all"
+        if languages == ["all"]:
+            languages = supported_languages
+
+        corpora: List[Corpus] = []
+        for language in languages:
+            if language not in supported_languages:
+                log.error(f"Language '{language}' is not in list of supported languages!")
+                log.error(f"Supported are '{supported_languages}'!")
+                log.error("Instantiate this Corpus for instance like so 'corpus = MASAKHA_POS(languages='bam')'")
+                raise Exception
+
+            language_folder = data_folder / language
+
+            # download data if necessary
+            data_path = f"{data_paths[version]}/{language}"
+            cached_path(f"{data_path}/dev.txt", language_folder)
+            cached_path(f"{data_path}/test.txt", language_folder)
+            cached_path(f"{data_path}/train.txt", language_folder)
+
+            # initialize comlumncorpus and add it to list
+            log.info(f"Reading data for language {language}@{version}")
+            corp = ColumnCorpus(
+                data_folder=language_folder,
+                column_format=columns,
+                encoding="utf-8",
+                in_memory=in_memory,
+                name=language,
+                **corpusargs,
+            )
+            corpora.append(corp)
+        super().__init__(
+            corpora,
+            name="africa-pos-" + "-".join(languages),
         )
