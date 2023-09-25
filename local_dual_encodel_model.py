@@ -369,7 +369,7 @@ def train_fewshot(args):
     if torch.cuda.is_available():
         flair.device = f"cuda:{args.cuda_device}"
 
-    save_base_path = get_save_base_path(args, task_name="fewshot-dual-encoder-main-experiment")
+    save_base_path = get_save_base_path(args, task_name=args.task_name)
 
     with open(f"data/fewshot_fewnerdfine.json", "r") as f:
         fewshot_indices = json.load(f)
@@ -648,7 +648,7 @@ def train_masked_fewshot(args):
     if torch.cuda.is_available():
         flair.device = f"cuda:{args.cuda_device}"
 
-    save_base_path = get_save_base_path(args, task_name="fewshot-dual-encoder")
+    save_base_path = get_save_base_path(args, task_name=args.task_name)
 
     with open(f"data/fewshot_masked-fewnerd-{args.fewnerd_granularity}.json", "r") as f:
         fewshot_indices = json.load(f)
@@ -849,6 +849,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_low_resource", action="store_true")
     parser.add_argument("--train_masked_fewshot", action="store_true")
     parser.add_argument("--find_hyperparameters", action="store_true")
+    parser.add_argument("--task_name", type=str)
 
     # Pretraining arguments
     parser.add_argument("--cuda_device", type=int, default=0)
@@ -891,6 +892,6 @@ if __name__ == "__main__":
     if args.train_low_resource:
         train_low_resource(args)
     if args.train_masked_fewshot:
-        train_fewshot(args)
+        train_masked_fewshot(args)
     if args.find_hyperparameters:
         find_hyperparameters(args)
