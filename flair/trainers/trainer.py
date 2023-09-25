@@ -578,7 +578,7 @@ class ModelTrainer(Pluggable):
                     # forward and backward for batch
                     for batch_step in batch_steps:
                         # forward pass
-                        with torch.autocast(device_type=flair.device.type, enabled=use_amp):
+                        with torch.autocast(device_type="cuda" if "cuda" in flair.device else "cpu", enabled=use_amp):
                             loss, datapoint_count = self.model.forward_loss(batch_step)
 
                         batch_train_samples += datapoint_count
