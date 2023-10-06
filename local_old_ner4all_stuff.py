@@ -869,7 +869,7 @@ if __name__ == "__main__":
     parser.add_argument("--mask_size", type=int, default=128)
     parser.add_argument("--uniform_p", type=float, nargs="+", default=[0.5, 0.5])
     parser.add_argument("--geometric_p", type=float, default=0.5)
-    parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--lr", type=float, default=1e-6)
     parser.add_argument("--bs", type=int, default=4)
     parser.add_argument("--mbs", type=int, default=2)
     parser.add_argument("--epochs", type=int, default=3)

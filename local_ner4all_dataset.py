@@ -9,7 +9,7 @@ from flair.datasets.sequence_labeling import MultiFileColumnCorpus
 
 log = logging.getLogger("flair")
 
-class LONER(MultiFileColumnCorpus):
+class NER4ALL(MultiFileColumnCorpus):
     def __init__(
         self,
         base_path: Union[str, Path],
