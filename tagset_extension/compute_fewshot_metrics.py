@@ -92,7 +92,10 @@ def plot_motivation_graph():
                     continue
                 with open(path, "r") as f:
                     run = json.load(f)
-                key = f"{s}-{k_shot}-{num_labels}"
+                if s == "simple":
+                    key = f"cryptic-{k_shot}-{num_labels}"
+                else:
+                    key = f"{s}-{k_shot}-{num_labels}"
                 if key not in scores:
                     scores[key] = [round(run["test_micro avg"]["f1-score"] * 100, 2)]
                 else:
@@ -107,17 +110,17 @@ def plot_motivation_graph():
             df_scores["std. F1"].append(float(np.round(np.std(v), 2)))
         return df_scores
 
-    sns.set(font_scale=1)
+    sns.set(font_scale=1.3)
     df = pd.DataFrame(to_dataframe())
     g = sns.FacetGrid(df, col="L", row="Label semantic", hue="k-shot", margin_titles=True, palette="viridis")
     g.map(sns.barplot, "k-shot", "avg. F1", width=0.5)
-    for x, s in enumerate(["simple", "short", "long"]):
+    for x, s in enumerate(["cryptic", "short", "long"]):
         for y, k in enumerate(["3", "5", "10", "30", "50"]):
             mean = df[(df["Label semantic"] == s) & (df["L"] == k)]["avg. F1"].mean()
             g.axes[x, y].axhline(mean, c='r', ls='--')
             g.axes[x, y].annotate(f"Avg: {mean:.1f}", xy=(0.1, mean + 1), ha="center")
     g.fig.subplots_adjust(top=0.92)
-    g.fig.suptitle("L distinct labels observed during pre-training")
+    g.fig.suptitle("L distinct labels observed during label interpretation training")
     plt.show()
 
 if __name__ == "__main__":

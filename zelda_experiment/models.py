@@ -2,7 +2,7 @@ import numpy as np
 import numpy.random
 import torch
 import torch.cuda
-from transformers import AutoModel, PreTrainedTokenizer
+from transformers import AutoModel, PreTrainedTokenizer, BertConfig, AutoModelForTokenClassification
 
 class BiEncoder(torch.nn.Module):
     def __init__(
@@ -15,8 +15,16 @@ class BiEncoder(torch.nn.Module):
             zelda_mask_size: int = 0,
     ):
         super(BiEncoder, self).__init__()
-        self.encoder = AutoModel.from_pretrained(encoder_model)
-        self.decoder = AutoModel.from_pretrained(decoder_model)
+        if encoder_model == "/glusterfs/dfs-gfs-dist/goldejon/embeddings/sparselatenttyping":
+            config = BertConfig.from_pretrained(encoder_model)
+            model = AutoModelForTokenClassification.from_pretrained(encoder_model, config=config)
+            self.encoder = model.bert
+        else:
+            self.encoder = AutoModel.from_pretrained(encoder_model)
+        if decoder_model == "/glusterfs/dfs-gfs-dist/goldejon/embeddings/sparselatenttyping":
+            self.decoder = AutoModel.from_pretrained("bert-base-uncased")
+        else:
+            self.decoder = AutoModel.from_pretrained(decoder_model)
         labels = {int(k): v for k, v in labels.items()}
         self.labels = labels
         self.num_labels = len(labels)
@@ -71,6 +79,10 @@ class BiEncoder(torch.nn.Module):
 
         if self.zelda_label_sampling == "full_desc":
             label_descriptions = self._full_labels(labels_for_batch)
+        elif self.zelda_label_sampling == "only_desc":
+            label_descriptions = self._only_desc(labels_for_batch)
+        elif self.zelda_label_sampling == "only_labels":
+            label_descriptions = self._only_labels(labels_for_batch)
         elif self.zelda_label_sampling == "sampled_desc":
             label_descriptions = self._sample_labels(labels_for_batch)
         else:
@@ -113,6 +125,48 @@ class BiEncoder(torch.nn.Module):
                     for _l in self.labels.get(i).get("labels"):
                         label_description.append(_l)
                 label_descriptions.append(", ".join(label_description))
+        return label_descriptions
+
+    def _only_labels(self, selected_labels):
+        label_descriptions = []
+        for i in selected_labels:
+            fallback = []
+            if i == 0:
+                label_descriptions.append("outside")
+            else:
+                if self.labels.get(i).get("description") is not None:
+                    fallback.append("description")
+                label_description = []
+                if self.labels.get(i).get("labels") is not None:
+                    num_labels = np.random.geometric(self.geometric_p, 1)
+                    num_labels = num_labels if num_labels <= len(self.labels.get(i).get("labels")) else len(self.labels.get(i).get("labels"))
+                    sampled_labels = np.random.choice(self.labels.get(i).get("labels"), num_labels, replace=False).tolist()
+                    label_descriptions.append(', '.join(sampled_labels))
+                elif fallback:
+                    label_descriptions.append(self.labels.get(i).get("description"))
+                else:
+                    label_description.append("miscellaneous")
+                label_descriptions.append(", ".join(label_description))
+        return label_descriptions
+
+    def _only_desc(self, selected_labels):
+        label_descriptions = []
+        for i in selected_labels:
+            fallback = []
+            if i == 0:
+                label_descriptions.append("outside")
+            else:
+                if self.labels.get(i).get("labels") is not None:
+                    fallback.append("labels")
+                if self.labels.get(i).get("description") is not None:
+                    label_descriptions.append(self.labels.get(i).get("description"))
+                elif fallback:
+                    num_labels = np.random.geometric(self.geometric_p, 1)
+                    num_labels = num_labels if num_labels <= len(self.labels.get(i).get("labels")) else len(self.labels.get(i).get("labels"))
+                    sampled_labels = np.random.choice(self.labels.get(i).get("labels"), num_labels, replace=False).tolist()
+                    label_descriptions.append(', '.join(sampled_labels))
+                else:
+                    label_descriptions.append("miscellaneous")
         return label_descriptions
 
     def _sample_labels(self, selected_labels):

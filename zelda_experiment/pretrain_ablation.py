@@ -26,54 +26,6 @@ logging.basicConfig(
 
 gluster_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/{dataset}"
 
-
-def process_ontonotes(dataset):
-
-    tag_info = dataset["train"].features["sentences"][0]["named_entities"]
-
-    def flatten(examples):
-        sentences = [sentence for doc in examples["sentences"] for sentence in doc]
-        examples["tokens"] = [sentence["words"] for sentence in sentences]
-        examples["ner_tags"] = [sentence["named_entities"] for sentence in sentences]
-        return examples
-
-    dataset = dataset.map(flatten, batched=True, remove_columns=dataset["train"].column_names)
-    dataset = dataset.map(lambda example, idx: {"id": idx}, with_indices=True)
-
-    id2biolabel = {idx: label for idx, label in enumerate(tag_info.feature.names)}
-    id2iolabel = {}
-    label_mapping = {}
-    for idx, label in id2biolabel.items():
-        if label == "O":
-            id2iolabel[len(id2iolabel)] = label
-            label_mapping[idx] = len(id2iolabel) - 1
-        elif label.startswith("B-") or label.startswith("I-"):
-            io_label = label[2:]
-            if io_label not in id2iolabel.values():
-                io_label_id = len(id2iolabel)
-                id2iolabel[io_label_id] = io_label
-                label_mapping[idx] = io_label_id
-            else:
-                label_mapping[idx] = [k for k, v in id2iolabel.items() if v == io_label][0]
-
-    def io_format(examples):
-        examples["ner_tags"] = [[label_mapping.get(old_id) for old_id in sample] for sample in examples["ner_tags"]]
-        return examples
-
-    dataset = dataset.map(io_format, batched=True)
-
-    tag_info.feature.names = list(id2iolabel.values())
-
-    features = datasets.Features({
-        "id": dataset["train"].features["id"],
-        "tokens": dataset["train"].features["tokens"],
-        "ner_tags": tag_info
-    })
-
-    dataset = dataset.cast(features)
-
-    return dataset
-
 def count_entity_mentions(tags):
     return [tags[i] for i in range(len(tags)) if
             (i == 0 or tags[i] != tags[i - 1]) and tags[i] != 0]
@@ -87,28 +39,17 @@ def pretrain_fixed_targets(args):
         full_dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
     elif args.dataset == "zelda":
         full_dataset = load_dataset("json", data_files="/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/jsonl/*")
-    elif args.dataset == "ontonotes":
-        full_dataset = process_ontonotes(load_dataset("conll2012_ontonotesv5", "english_v4"))
     else:
         raise ValueError(f"Unknown dataset {args.dataset}")
 
     # --- Load pretraining indices ---
-    with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/{args.masking_dataset}_indices_5050.json", "r") as f:
+    with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/{args.masking_dataset}_fewshots.json", "r") as f:
         pretraining_indices = json.load(f)
 
     # --- Iterate over pretraining configs  ---
-    for config, indices in pretraining_indices.items():
-        # --- Parse config ---
-        if args.masking_dataset == "fewnerd":
-            label_column, kshot, seed = config.split("-")
-            if label_column == "ner_tags":
-                continue
-        else:
-            label_column = "ner_tags"
-            kshot, seed = config.split("-")
-        if kshot != "1":
-            continue
-        seed = int(seed)
+    for kshot, indices in pretraining_indices.items():
+        label_column = "ner_tags"
+        seed = 0
 
         # --- Setup logging ---
         logger = logging.getLogger(f"{task}-{seed}")
@@ -121,15 +62,13 @@ def pretrain_fixed_targets(args):
             transformer = "bert"
         elif args.transformer_model == "xlm-roberta-base":
             transformer = "xlmr"
-        elif args.transformer_model == "/glusterfs/dfs-gfs-dist/goldejon/embeddings/sparselatenttyping":
-            transformer = "sparselatenttyping"
         else:
             raise ValueError(f"Unknown transformer model {args.transformer_model}")
 
         if args.dataset in ["fewnerd", "ontonotes"]:
             pretraining_extension = "-{transformer}-{label_column}-seed-{seed}".format(
                 transformer=transformer,
-                label_column=label_column,
+                label_column=args.masking_dataset,
                 seed=seed
             )
         elif args.dataset == "zelda":
@@ -160,7 +99,7 @@ def pretrain_fixed_targets(args):
         # --- Mask dataset for pretraining ---
         pretraining_labels = indices["pretraining_labels"]
 
-        if args.dataset in ["fewnerd", "ontonotes"]:
+        if args.dataset in ["fewnerd"]:
             random.seed(seed)
             dataset = mask_full_dataset(dataset, label_column, args.label_semantic_level, pretraining_labels)
             pretraining_dataset = dataset["train"].shuffle(seed)
@@ -260,13 +199,8 @@ def pretrain_fixed_targets(args):
         logger.info("Learning rate: {}".format(args.lr))
         logger.info("Number of epochs: {}".format(args.num_epochs))
 
-
-        if args.transformer_model == "/glusterfs/dfs-gfs-dist/goldejon/embeddings/sparselatenttyping":
-            encoder_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-            decoder_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-        else:
-            encoder_tokenizer = AutoTokenizer.from_pretrained(args.transformer_model)
-            decoder_tokenizer = AutoTokenizer.from_pretrained(args.transformer_model)
+        encoder_tokenizer = AutoTokenizer.from_pretrained(args.transformer_model)
+        decoder_tokenizer = AutoTokenizer.from_pretrained(args.transformer_model)
 
         def align_labels_with_tokens(labels, word_ids):
             new_labels = []
@@ -368,7 +302,7 @@ def pretrain_fixed_targets(args):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--dataset", type=str, choices=["fewnerd", "zelda", "ontonotes"])
-    parser.add_argument("--masking_dataset", type=str, choices=["fewnerd", "ontonotes"], default=None)
+    parser.add_argument("--masking_dataset", type=str, choices=["wnut_17", "jnlpba"], default=None)
     parser.add_argument("--label_semantic_level", type=str, default="short")
     parser.add_argument("--zelda_entity_mentions", type=str, choices=["small", "full"], required=False)
     parser.add_argument("--zelda_sampling", type=str, choices=["full_desc", "sampled_desc", "only_labels", "only_desc"], required=False)

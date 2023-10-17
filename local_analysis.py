@@ -964,4 +964,4 @@ def main_experiments_in_domain(base_path, add_graph: bool = False):
         plt.show()
 
 if __name__ == "__main__":
-    main_experiments_low_resource(base_path="/glusterfs/dfs-gfs-dist/goldejon/flair-models/low-resource-dual-encoder-main-experiment", add_graph=True)
+    main_experiments_low_resource(base_path="/glusterfs/dfs-gfs-dist/goldejon/ner4all/emnlp_submission/low-resource-dual-encoder-main-experiment", add_graph=True)

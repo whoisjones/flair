@@ -3,16 +3,15 @@ import json
 import copy
 import logging
 import random
+import glob
 from datetime import datetime
 from pathlib import Path
-from argparse import ArgumentParser
 from prettytable import PrettyTable
 from seqeval.metrics import classification_report
 
 import lightning as L
 import numpy as np
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, TrainingArguments, Trainer
-import datasets
 from datasets import load_dataset
 
 from masking import mask_full_dataset
@@ -27,113 +26,56 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-pretained_models_folder = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/"
+pretained_models_folder = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/*"
 finetuning_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
-
-def process_ontonotes(dataset):
-
-    tag_info = dataset["train"].features["sentences"][0]["named_entities"]
-
-    def flatten(examples):
-        sentences = [sentence for doc in examples["sentences"] for sentence in doc]
-        examples["tokens"] = [sentence["words"] for sentence in sentences]
-        examples["ner_tags"] = [sentence["named_entities"] for sentence in sentences]
-        return examples
-
-    dataset = dataset.map(flatten, batched=True, remove_columns=dataset["train"].column_names)
-    dataset = dataset.map(lambda example, idx: {"id": idx}, with_indices=True)
-
-    id2biolabel = {idx: label for idx, label in enumerate(tag_info.feature.names)}
-    id2iolabel = {}
-    label_mapping = {}
-    for idx, label in id2biolabel.items():
-        if label == "O":
-            id2iolabel[len(id2iolabel)] = label
-            label_mapping[idx] = len(id2iolabel) - 1
-        elif label.startswith("B-") or label.startswith("I-"):
-            io_label = label[2:]
-            if io_label not in id2iolabel.values():
-                io_label_id = len(id2iolabel)
-                id2iolabel[io_label_id] = io_label
-                label_mapping[idx] = io_label_id
-            else:
-                label_mapping[idx] = [k for k, v in id2iolabel.items() if v == io_label][0]
-
-    def io_format(examples):
-        examples["ner_tags"] = [[label_mapping.get(old_id) for old_id in sample] for sample in examples["ner_tags"]]
-        return examples
-
-    dataset = dataset.map(io_format, batched=True)
-
-    tag_info.feature.names = list(id2iolabel.values())
-
-    features = datasets.Features({
-        "id": dataset["train"].features["id"],
-        "tokens": dataset["train"].features["tokens"],
-        "ner_tags": tag_info
-    })
-
-    dataset = dataset.cast(features)
-
-    return dataset
 
 def count_entity_mentions(tags):
     return [tags[i] for i in range(len(tags)) if
             (i == 0 or tags[i] != tags[i - 1]) and tags[i] != 0]
 
-def fewshot_evaluation(args):
+def zeroshot_evaluation():
     # --- Set seed ---
     L.seed_everything(123)
 
     # --- Load dataset ---
-    if args.fewshot_dataset == "fewnerd":
-        full_dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
-        indices_str = "fewnerd"
-    elif args.fewshot_dataset == "ontonotes":
-        full_dataset = process_ontonotes(load_dataset("conll2012_ontonotesv5", args.ontonotes_language))
-        indices_str = f"ontonotes_{args.ontonotes_language}"
-    else:
-        raise ValueError(f"Unknown dataset {args.fewshot_dataset}")
+    full_dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
 
     # --- Load pretraining indices ---
-    with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/{indices_str}_indices_5050.json", "r") as f:
+    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewnerd_indices_5050.json", "r") as f:
         pretraining_indices = json.load(f)
 
-    # --- Iterate over pretraining configs  ---
-    for config, indices in pretraining_indices.items():
+    pretrained_models = glob.glob(pretained_models_folder)
 
-        # --- Parse config ---
-        if args.fewshot_dataset == "fewnerd":
+    for pretrained_model_path in pretrained_models:
+        # --- Iterate over pretraining configs  ---
+        for config, indices in pretraining_indices.items():
+
+            # --- Parse config ---
             label_column, kshot, pretraining_seed = config.split("-")
-        elif args.fewshot_dataset == "ontonotes":
-            label_column = "ner_tags"
-            kshot, pretraining_seed = config.split("-")
 
-        if kshot == "1":
-            num_epochs = 100
-        elif kshot == "5":
-            num_epochs = 75
-        elif kshot == "10":
-            num_epochs = 50
-        else:
-            raise ValueError(f"Unknown kshot {kshot}")
+            if not pretrained_model_path.endswith(pretraining_seed):
+                continue
 
-        # --- Parse pretraining information from path ---
-        pretrained_model_config = args.pretrained_model_path.split("/")[-1].split("-")
-        dataset_name = pretrained_model_config[0]
-        transformer = pretrained_model_config[1]
-        if dataset_name in ["fewnerd", "ontonotes"]:
-            pretraining_label_column = pretrained_model_config[2]
-        elif dataset_name == "zelda":
-            pretraining_label_column = pretrained_model_config[-3]
-        if label_column != pretraining_label_column:
-            continue
-        pretrained_model_path = pretained_models_folder + args.pretrained_model_path + pretraining_seed
-        pretraining_seed = int(pretraining_seed)
+            if kshot in ["5", "10"]:
+                continue
 
-        for fewshot_seed, fewshot_indices in indices["fewshot_indices"].items():
-            fewshot_seed = int(fewshot_seed)
-            run_idx = (fewshot_seed + 1) + (pretraining_seed * 3)
+            # --- Parse pretraining information from path ---
+            pretrained_model_config = pretrained_model_path.split("/")[-1].split("-")
+            dataset_name = pretrained_model_config[0]
+            if dataset_name == "ontonotes":
+                continue
+            transformer = pretrained_model_config[1]
+            if dataset_name == "fewnerd":
+                pretraining_label_column = pretrained_model_config[2]
+            elif dataset_name == "zelda":
+                if pretrained_model_config[-4] == "ontonotes":
+                    continue
+                pretraining_label_column = pretrained_model_config[-3]
+            if label_column != pretraining_label_column:
+                continue
+            pretraining_seed = int(pretraining_seed)
+
+            run_idx = pretraining_seed + 1
 
             # --- Setup logging ---
             logger = logging.getLogger(f"{task}-kshot-{kshot}-seed-{run_idx}")
@@ -141,11 +83,11 @@ def fewshot_evaluation(args):
             # --- Copy sorted dataset ---
             dataset = copy.deepcopy(full_dataset)
 
-            if dataset_name in ["fewnerd", "ontonotes"]:
+            if dataset_name == "fewnerd":
                 finetuning_extension = "run{run_idx}-{k}shot-{granularity}__pretrained-on-{pretraining_dataset}-{transformer}".format(
                     run_idx=run_idx,
-                    k=kshot,
-                    granularity=f"{'' if args.fewshot_dataset == 'fewnerd' else f'{args.ontonotes_language}_'}" + label_column,
+                    k=0,
+                    granularity=label_column,
                     pretraining_dataset=dataset_name,
                     transformer=transformer,
                 )
@@ -155,8 +97,8 @@ def fewshot_evaluation(args):
                 zelda_num_negatives = pretrained_model_config[7]
                 finetuning_extension = "run{run_idx}-{k}shot-{granularity}_pretrained-on-{size}-{pretraining_dataset}-{transformer}-{zelda_label_granularity}-{zelda_num_negatives}negatives".format(
                     run_idx=run_idx,
-                    k=kshot,
-                    granularity=f"{'' if args.fewshot_dataset == 'fewnerd' else f'{args.ontonotes_language}_'}" + label_column,
+                    k=0,
+                    granularity=label_column,
                     size=size,
                     pretraining_dataset=dataset_name,
                     transformer=transformer,
@@ -182,26 +124,20 @@ def fewshot_evaluation(args):
             pretraining_labels = indices["pretraining_labels"]
             finetuning_labels = indices["finetuning_labels"]
             random.seed(pretraining_seed)
-            dataset = mask_full_dataset(dataset, label_column, "short" if dataset_name in ["fewnerd", "ontonotes"] else "long", pretraining_labels)
-            fewshot_dataset = dataset["validation"].shuffle(fewshot_seed).select(fewshot_indices)
-            id2label = {idx: label for idx, label in enumerate(fewshot_dataset.features[label_column].feature.names)}
+            dataset = mask_full_dataset(dataset, label_column, "short" if dataset_name == "fewnerd" else "long", pretraining_labels)
+            id2label = {idx: label for idx, label in enumerate(dataset["test"].features[label_column].feature.names)}
 
-            label_map_dataset = "few-nerd" if args.fewshot_dataset == "fewnerd" else "conll2012_ontonotesv5"
             # --- QA Check that we sample the correct pre-computed entities---
-            assert sum([len(count_entity_mentions(x)) for x in fewshot_dataset[label_column]]) <= int(kshot) * len(finetuning_labels)
             finetuning_labels_qa = [
-                semantic_label_name_map[label_map_dataset][f"{label_column}_{'short' if dataset_name in ['fewnerd','ontonotes'] else 'long'}"].get(x) for x in
+                semantic_label_name_map["few-nerd"][f"{label_column}_{'short' if dataset_name == 'fewnerd' else 'long'}"].get(x) for x in
                 finetuning_labels]
-            assert set([x for x in fewshot_dataset.features[label_column].feature.names if x != "outside"]) == set(finetuning_labels_qa)
+            assert set([x for x in dataset["test"].features[label_column].feature.names if x != "outside"]) == set(finetuning_labels_qa)
             logger.info("QA Check passed. Number of fewshot examples is correct.")
 
             # --- Log config ---
             logger.info(30 * '-')
-            logger.info(f"STARTING FINETUNING RUN")
-            logger.info("Fewshot on:")
+            logger.info(f"STARTING ZEROSHOT RUN")
             logger.info("Dataset: {}".format(dataset_name))
-            logger.info("K-shot: {}".format(kshot))
-            logger.info("Number of fewshot sentences: {}".format(len(fewshot_dataset)))
             logger.info("Label granularity: {}".format(label_column))
             logger.info("Label semantic level: {}".format("short" if dataset_name == "fewnerd" else "long"))
             logger.info("Save path: {}".format(experiment_path))
@@ -216,8 +152,6 @@ def fewshot_evaluation(args):
                 logger.info("Zelda num examples: {}".format(size))
                 logger.info("Zelda label granularity: {}".format(zelda_label_granularity))
                 logger.info("Zelda number of negatives: {}".format(zelda_num_negatives))
-            logger.info("Learning rate: {}".format(args.lr))
-            logger.info("Number of epochs: {}".format(num_epochs))
 
             encoder_tokenizer = AutoTokenizer.from_pretrained(pretrained_model_path + "/encoder")
             decoder_tokenizer = AutoTokenizer.from_pretrained(pretrained_model_path + "/decoder")
@@ -253,12 +187,6 @@ def fewshot_evaluation(args):
 
                 tokenized_inputs["labels"] = new_labels
                 return tokenized_inputs
-
-            fewshot_dataset = fewshot_dataset.map(
-                tokenize_and_align_labels,
-                batched=True,
-                remove_columns=fewshot_dataset.column_names,
-            )
 
             def compute_metrics(eval_preds):
                 logits, golds = eval_preds
@@ -299,13 +227,13 @@ def fewshot_evaluation(args):
                 overwrite_output_dir=True,
                 do_train=True,
                 per_device_train_batch_size=16,
-                per_device_eval_batch_size=16,
-                learning_rate=args.lr,
+                per_device_eval_batch_size=32,
+                learning_rate=1e-5,
                 warmup_ratio=0.1,
                 save_strategy="no",
                 save_total_limit=0,
                 seed=123,
-                num_train_epochs=num_epochs,
+                num_train_epochs=1,
                 logging_dir=str(experiment_path),
                 logging_steps=5,
             )
@@ -322,19 +250,12 @@ def fewshot_evaluation(args):
             trainer = Trainer(
                 model=model,
                 args=training_args,
-                train_dataset=fewshot_dataset,
+                train_dataset=None,
                 eval_dataset=None,
                 tokenizer=encoder_tokenizer,
                 data_collator=data_collator,
                 compute_metrics=compute_metrics,
             )
-            logger.info("Start training...")
-            trainer.train()
-            logger.info("Pretraining completed.")
-
-            logger.info("Log history:")
-            for log_step in trainer.state.log_history:
-                logger.info(log_step)
 
             test_dataset = dataset["test"].map(
                 tokenize_and_align_labels,
@@ -349,15 +270,9 @@ def fewshot_evaluation(args):
             with open(experiment_path / "results.json", "w") as f:
                 json.dump(preds.metrics, f)
 
-            logger.info(f"ENDED FINETUNING RUN")
+            logger.info(f"ENDED ZEROSHOT RUN")
             logger.info(30 * '-')
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser()
-    parser.add_argument("--pretrained_model_path", type=str)
-    parser.add_argument("--fewshot_dataset", type=str, default="fewnerd")
-    parser.add_argument("--ontonotes_language", type=str, default="english_v4")
-    parser.add_argument("--lr", type=float, default=3e-5)
-    config = parser.parse_args()
-    fewshot_evaluation(config)
+    zeroshot_evaluation()
