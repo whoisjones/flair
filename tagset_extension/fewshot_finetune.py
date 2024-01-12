@@ -1,19 +1,20 @@
 import os
 import json
 import logging
+import random
 from argparse import ArgumentParser
 from pathlib import Path
 from datetime import datetime
 
+import torch
 import numpy as np
-import pytorch_lightning as pl
 from seqeval.metrics import classification_report
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, TrainingArguments, Trainer
 from datasets import load_dataset
 from prettytable import PrettyTable
 
 from masking import mask_dataset
-from models import get_model
+from models import BiEncoder
 from pretrain import gluster_path, pretraining_extension
 
 task_name = "finetuning"
@@ -26,17 +27,17 @@ logging.basicConfig(
 
 logger = logging.getLogger(task_name)
 
-def finetune_fixed_targets(args):
-    experiment_path = gluster_path.format(loss_fn=args.loss_fn) + "finetuning/run-{idx}-{kshot}shot-with-{pt_num_labels}-{semantic_level}-labels"
 
-    if not os.path.exists(gluster_path.format(loss_fn=args.loss_fn) + "finetuning"):
-        os.makedirs(gluster_path.format(loss_fn=args.loss_fn) + "finetuning")
-    current_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    file_handler = logging.FileHandler(
-        f'/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/{args.loss_fn}/{task_name}_{current_time}.log'
-    )
-    logger.addHandler(file_handler)
-    pl.seed_everything(123)
+def finetune_fixed_targets(args):
+    experiment_path = gluster_path + "finetuning/run-{idx}-{kshot}shot-with-{pt_num_labels}-{semantic_level}-labels"
+
+    if not os.path.exists(gluster_path + "finetuning"):
+        os.makedirs(gluster_path + "finetuning")
+
+    random.seed(123)
+    np.random.seed(123)
+    torch.manual_seed(123)
+    torch.cuda.manual_seed_all(123)
 
     dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
 
@@ -58,6 +59,12 @@ def finetune_fixed_targets(args):
                         run_idx = (ft_seed + 1) + (pt_seed * args.pretraining_seeds)
                         save_base_path = Path(experiment_path.format(idx=run_idx, kshot=kshot, semantic_level=semantic_level, pt_num_labels=pt_num_labels))
 
+                        if not os.path.exists(save_base_path):
+                            os.makedirs(save_base_path)
+
+                        file_handler_pretraining = logging.FileHandler(f'{save_base_path}/{task_name}.log')
+                        logger.addHandler(file_handler_pretraining)
+
                         logger.info(30 * '-')
                         logger.info(f"STARTING FINETUNING RUN")
                         logger.info("Pretraining Model Config:")
@@ -66,7 +73,6 @@ def finetune_fixed_targets(args):
                         logger.info("Label semantic level: {}".format(semantic_level))
 
                         logger.info("Fine-tuning Model Config:")
-                        logger.info("Loss function: {}".format(args.loss_fn))
                         logger.info("Learning rate: {}".format(args.lr))
                         logger.info("Number of epochs: {}".format(args.num_epochs))
                         logger.info("Save path: {}".format(save_base_path))
@@ -77,8 +83,7 @@ def finetune_fixed_targets(args):
                         train_dataset = fine_tuning_dataset["validation"].shuffle(ft_seed).select(fewshot_indices[f"{kshot}-{ft_seed}"]["indices"])
                         id2label = {idx: label for idx, label in enumerate(train_dataset.features["fine_ner_tags"].feature.names)}
 
-                        model_path = (gluster_path.format(loss_fn=args.loss_fn) +
-                                      pretraining_extension.format(
+                        model_path = (gluster_path + pretraining_extension.format(
                                 semantic_level=semantic_level, num_labels=pt_num_labels, seed=pt_seed
                             ))
 
@@ -147,12 +152,11 @@ def finetune_fixed_targets(args):
                             logging_steps=5,
                         )
 
-                        model = get_model(
-                            loss_fn=args.loss_fn,
+                        model = BiEncoder(
                             encoder_model=model_path + "/encoder",
                             decoder_model=model_path + "/decoder",
-                            id2label=id2label,
-                            decoder_tokenizer=decoder_tokenizer
+                            tokenizer=decoder_tokenizer,
+                            labels=id2label,
                         )
 
                         def compute_metrics(eval_preds):
@@ -230,32 +234,13 @@ def finetune_fixed_targets(args):
                         logger.info(f"ENDED FINE-TUNING RUN")
                         logger.info(30 * '-')
 
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/{args.loss_fn}/finetuning/overall_scores_{timestamp}.json", "w") as f:
-        json.dump(overall_scores, f)
-
-    logger.info("Computing overall average:")
-    table = PrettyTable()
-    for semantic_level in args.label_semantic_level:
-        logger.info("RESULTS FOR {} LABELS".format(semantic_level))
-        for c in ["Number of pretraining labels"] + [f"{kshot}-shot" for kshot in args.kshots]:
-            table.add_column(c, [])
-        for pt_num_labels in args.num_pretraining_labels:
-            row = [pt_num_labels]
-            for k in args.kshots:
-                mean = np.round(np.mean(overall_scores[f"{k}shot-on-{semantic_level}-{pt_num_labels}"]), 2)
-                std = np.round(np.std(overall_scores[f"{k}shot-on-{semantic_level}-{pt_num_labels}"]), 2)
-                row.append(f"{mean} +/- {std}")
-            table.add_row(row)
-        logger.info(table)
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--loss_fn", choices=['ce', 'bce', 'cosine', 'contrastive'])
     parser.add_argument("--kshots", nargs="+", type=int)
     parser.add_argument("--num_pretraining_labels", nargs="+", type=int)
-    parser.add_argument("--pretraining_seeds", type=int, choices=[1,2,3])
-    parser.add_argument("--fewshot_seeds", type=int, choices=[1,2,3])
+    parser.add_argument("--pretraining_seeds", type=int, default=3)
+    parser.add_argument("--fewshot_seeds", type=int, default=3)
     parser.add_argument("--label_semantic_level", nargs="+", type=str, choices=["simple", "short", "long"])
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--num_epochs", type=int, default=30)

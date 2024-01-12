@@ -12,6 +12,114 @@ import matplotlib.colors as mcolors
 from matplotlib import gridspec
 
 
+def extract_lear_scores():
+    path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/finetuning"
+    folders = glob.glob(path + "/*")
+    results = {}
+    for run in range(1, 10):
+        runn = "run{x}".format(x=run)
+        for corpus in ["fewnerd", "zelda"]:
+            for label_column in ["ner_tags", "fine_ner_tags"]:
+                for k in ["1shot", "5shot", "10shot"]:
+                    for path in folders:
+                        if all([x in path for x in [runn, corpus, label_column, k]]):
+                            if label_column == "ner_tags" and "fine_ner_tags" in path:
+                                continue
+                            if corpus not in results:
+                                results[corpus] = {}
+                            if label_column not in results[corpus]:
+                                results[corpus][label_column] = {}
+                            if k not in results[corpus][label_column]:
+                                results[corpus][label_column][k] = {"scores": []}
+                            with open(path + "/results.json", "r") as f:
+                                scores = json.load(f)
+                            results[corpus][label_column][k]["scores"].append(scores["test_micro avg"]["f1-score"])
+    for corpus, corpus_results in results.items():
+        for label, label_results in corpus_results.items():
+            for k, k_results in label_results.items():
+                results[corpus][label][k]["avg"] = round(np.mean(k_results["scores"]) * 100, 2)
+                results[corpus][label][k]["std"] = round(np.std(k_results["scores"]) * 100, 2)
+                print("{corpus} - {label} - {k} - {avg} \pm {std}".format(
+                    corpus=corpus,
+                    label=label,
+                    k=k,
+                    avg=results[corpus][label][k]["avg"],
+                    std=results[corpus][label][k]["std"],
+                ))
+    return results
+
+
+def extract_sparse_latent_typing_validation():
+    path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/validation-experiment/finetuning"
+    folders = glob.glob(path + "/*")
+    results = {}
+    for run in range(1, 10):
+        runn = "run-{x}".format(x=run)
+        for label_column in ["simple", "short", "long"]:
+            for exp in ["with-3-", "with-5-", "with-10-", "with-20-", "with-30-", "with-40-", "with-50-"]:
+                for k in ["1shot", "5shot", "10shot"]:
+                    for path in folders:
+                        if all([x in path for x in [runn, label_column, exp, k]]):
+                            if not exp in results:
+                                results[exp] = {}
+                            if not label_column in results[exp]:
+                                results[exp][label_column] = {}
+                            if not k in results[exp][label_column]:
+                                results[exp][label_column][k] = {"scores": []}
+                            with open(path + "/results.json", "r") as f:
+                                scores = json.load(f)
+                            results[exp][label_column][k]["scores"].append(scores["test_micro avg"]["f1-score"])
+    for exp, exp_results in results.items():
+        for label, label_results in exp_results.items():
+            for k, k_results in label_results.items():
+                results[exp][label][k]["avg"] = round(np.mean(k_results["scores"]) * 100, 2)
+                results[exp][label][k]["std"] = round(np.std(k_results["scores"]) * 100, 2)
+                print("{exp} - {label} - {k} - {avg} \pm {std}".format(
+                    exp=exp,
+                    label=label,
+                    k=k,
+                    avg=results[exp][label][k]["avg"],
+                    std=results[exp][label][k]["std"],
+                ))
+    return results
+
+def extract_sparse_latent_typing_scores():
+    path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation"
+    folders = glob.glob(path + "/*")
+    folders = sorted([x for x in folders if "sparselatenttyping" in x])
+    results = {}
+    for run in range(1, 10):
+        runn = "run{x}".format(x=run)
+        for label_column in ["ner_tags", "fine_ner_tags"]:
+            for exp in ["fewnerd-sparselatenttyping", "lowresouce-sparselatenttyping", "zelda-sparselatenttyping"]:
+                for k in ["1shot", "5shot", "10shot"]:
+                    for path in folders:
+                        if all([x in path for x in [runn, label_column, exp, k]]):
+                            if label_column == "ner_tags" and "fine_ner_tags" in path:
+                                continue
+                            if not exp in results:
+                                results[exp] = {}
+                            if not label_column in results[exp]:
+                                results[exp][label_column] = {}
+                            if not k in results[exp][label_column]:
+                                results[exp][label_column][k] = {"scores": []}
+                            with open(path + "/results.json", "r") as f:
+                                scores = json.load(f)
+                            results[exp][label_column][k]["scores"].append(scores["test_micro avg"]["f1-score"])
+    for exp, exp_results in results.items():
+        for label, label_results in exp_results.items():
+            for k, k_results in label_results.items():
+                results[exp][label][k]["avg"] = round(np.mean(k_results["scores"]) * 100, 2)
+                results[exp][label][k]["std"] = round(np.std(k_results["scores"]) * 100, 2)
+                print("{exp} - {label} - {k} - {avg} \pm {std}".format(
+                    exp=exp,
+                    label=label,
+                    k=k,
+                    avg=results[exp][label][k]["avg"],
+                    std=results[exp][label][k]["std"],
+                ))
+    return results
+
 def recompute_results(path: str):
     """
     Recompute overall results file and returns it which in turn can be saved again to the target folder as results.json

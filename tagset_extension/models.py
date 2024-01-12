@@ -29,7 +29,6 @@ class BiEncoder(torch.nn.Module):
         self.uniform_p = uniform_p
         self.geometric_p = geometric_p
         self.loss = torch.nn.CrossEntropyLoss()
-        self.bce_loss = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, input_ids, attention_mask, labels):
         token_hidden_states = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
@@ -52,10 +51,8 @@ class BiEncoder(torch.nn.Module):
         else:
             label_embeddings = label_hidden_states.last_hidden_state[:, 0, :]
 
-        # CUT OUT O LABELS FOR BCE LOSS
         logits = torch.matmul(token_hidden_states.last_hidden_state, label_embeddings.T)
 
-        # SELECT ONLY POSIIVES LOGITS FOR BCE LOSS
         return (self.loss(logits.transpose(1, 2), labels), logits)
 
     def mean_pooling(self, model_output, attention_mask):
@@ -233,7 +230,7 @@ class LEAR(BiEncoder):
                 list(self.labels.values()),
                 padding=True,
                 truncation=True,
-                max_length=64,
+                max_length=128,
                 return_tensors="pt").to(labels.device)
             label_hidden_states = self.encoder(**encoded_labels)
 

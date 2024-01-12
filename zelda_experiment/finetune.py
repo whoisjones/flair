@@ -9,14 +9,14 @@ from argparse import ArgumentParser
 from prettytable import PrettyTable
 from seqeval.metrics import classification_report
 
-import lightning as L
+import torch
 import numpy as np
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, TrainingArguments, Trainer
 import datasets
 from datasets import load_dataset
 
 from masking import mask_full_dataset
-from models import BiEncoder
+from models import BiEncoder, LEAR
 from label_name_map import semantic_label_name_map
 
 task = "finetuning"
@@ -27,8 +27,9 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-pretained_models_folder = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/"
-finetuning_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
+pretained_models_folder = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/pretrained-models/"
+finetuning_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/finetuning/"
+
 
 def process_ontonotes(dataset):
 
@@ -77,13 +78,18 @@ def process_ontonotes(dataset):
 
     return dataset
 
+
 def count_entity_mentions(tags):
     return [tags[i] for i in range(len(tags)) if
             (i == 0 or tags[i] != tags[i - 1]) and tags[i] != 0]
 
+
 def fewshot_evaluation(args):
     # --- Set seed ---
-    L.seed_everything(123)
+    random.seed(123)
+    np.random.seed(123)
+    torch.manual_seed(123)
+    torch.cuda.manual_seed_all(123)
 
     # --- Load dataset ---
     if args.fewshot_dataset == "fewnerd":
@@ -108,6 +114,8 @@ def fewshot_evaluation(args):
         elif args.fewshot_dataset == "ontonotes":
             label_column = "ner_tags"
             kshot, pretraining_seed = config.split("-")
+        else:
+            raise ValueError(f"Unknown dataset {args.fewshot_dataset}")
 
         if kshot == "1":
             num_epochs = 100
@@ -118,16 +126,15 @@ def fewshot_evaluation(args):
         else:
             raise ValueError(f"Unknown kshot {kshot}")
 
-        # --- Parse pretraining information from path ---
+        # --- Parse pretraining information from path -
         pretrained_model_config = args.pretrained_model_path.split("/")[-1].split("-")
         dataset_name = pretrained_model_config[0]
-        transformer = pretrained_model_config[1]
-        if dataset_name in ["fewnerd", "ontonotes"]:
-            pretraining_label_column = pretrained_model_config[2]
-        elif dataset_name == "zelda":
-            pretraining_label_column = pretrained_model_config[-3]
+        model_architecture = pretrained_model_config[1]
+        transformer = pretrained_model_config[2]
+        pretraining_label_column = pretrained_model_config[-3]
         if label_column != pretraining_label_column:
             continue
+
         pretrained_model_path = pretained_models_folder + args.pretrained_model_path + pretraining_seed
         pretraining_seed = int(pretraining_seed)
 
@@ -142,23 +149,25 @@ def fewshot_evaluation(args):
             dataset = copy.deepcopy(full_dataset)
 
             if dataset_name in ["fewnerd", "ontonotes"]:
-                finetuning_extension = "run{run_idx}-{k}shot-{granularity}__pretrained-on-{pretraining_dataset}-{transformer}".format(
+                finetuning_extension = "run{run_idx}-{k}shot-{granularity}_pretrained-on-{pretraining_dataset}-{model_architecture}-{transformer}".format(
                     run_idx=run_idx,
                     k=kshot,
                     granularity=f"{'' if args.fewshot_dataset == 'fewnerd' else f'{args.ontonotes_language}_'}" + label_column,
                     pretraining_dataset=dataset_name,
+                    model_architecture=model_architecture,
                     transformer=transformer,
                 )
             elif dataset_name == "zelda":
-                size = pretrained_model_config[2]
-                zelda_label_granularity = pretrained_model_config[5]
-                zelda_num_negatives = pretrained_model_config[7]
-                finetuning_extension = "run{run_idx}-{k}shot-{granularity}_pretrained-on-{size}-{pretraining_dataset}-{transformer}-{zelda_label_granularity}-{zelda_num_negatives}negatives".format(
+                size = pretrained_model_config[5]
+                zelda_label_granularity = pretrained_model_config[8]
+                zelda_num_negatives = pretrained_model_config[10]
+                finetuning_extension = "run{run_idx}-{k}shot-{granularity}_pretrained-on-{size}-{pretraining_dataset}-{model_architecture}-{transformer}-{zelda_label_granularity}-{zelda_num_negatives}negatives".format(
                     run_idx=run_idx,
                     k=kshot,
                     granularity=f"{'' if args.fewshot_dataset == 'fewnerd' else f'{args.ontonotes_language}_'}" + label_column,
                     size=size,
                     pretraining_dataset=dataset_name,
+                    model_architecture=model_architecture,
                     transformer=transformer,
                     zelda_label_granularity=zelda_label_granularity,
                     zelda_num_negatives=zelda_num_negatives,
@@ -211,6 +220,8 @@ def fewshot_evaluation(args):
             # --- Log pretraining config ---
             logger.info(10 * "-")
             logger.info("Pretrained model:")
+            logger.info("Pretrained model: {}".format(pretrained_model_path))
+            logger.info("Model architecture: {}".format(model_architecture))
             logger.info("Transformer: {}".format(transformer))
             if dataset_name == "zelda":
                 logger.info("Zelda num examples: {}".format(size))
@@ -310,14 +321,26 @@ def fewshot_evaluation(args):
                 logging_steps=5,
             )
 
-            model = BiEncoder(
-                encoder_model=pretrained_model_path + "/encoder",
-                decoder_model=pretrained_model_path + "/decoder",
-                tokenizer=decoder_tokenizer,
-                labels=id2label,
-                zelda_label_sampling=None,
-                zelda_mask_size=0
-            )
+            if model_architecture == "biencoder":
+                model = BiEncoder(
+                    encoder_model=pretrained_model_path + "/encoder",
+                    decoder_model=pretrained_model_path + "/decoder",
+                    tokenizer=decoder_tokenizer,
+                    labels=id2label,
+                    zelda_label_sampling=None,
+                    zelda_mask_size=0,
+                )
+            elif model_architecture == "lear":
+                model = LEAR(
+                    encoder_model=pretrained_model_path + "/encoder",
+                    decoder_model=pretrained_model_path + "/decoder",
+                    tokenizer=decoder_tokenizer,
+                    labels=id2label,
+                    zelda_label_sampling=None,
+                    zelda_mask_size=0,
+                )
+            else:
+                raise ValueError(f"Unknown model {args.model}")
 
             trainer = Trainer(
                 model=model,
@@ -358,6 +381,6 @@ if __name__ == "__main__":
     parser.add_argument("--pretrained_model_path", type=str)
     parser.add_argument("--fewshot_dataset", type=str, default="fewnerd")
     parser.add_argument("--ontonotes_language", type=str, default="english_v4")
-    parser.add_argument("--lr", type=float, default=3e-5)
+    parser.add_argument("--lr", type=float, default=1e-5)
     config = parser.parse_args()
     fewshot_evaluation(config)

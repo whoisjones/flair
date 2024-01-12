@@ -80,15 +80,15 @@ def to_dataframe():
 
 def plot_motivation_graph():
     def to_dataframe():
-        paths = glob.glob(
-            "/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/ce/finetuning/*/result*")
+        #paths = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/ce/finetuning/*/result*")
+        paths = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/validation-experiment/finetuning/*/result*")
         scores = {}
         for s in ["simple", "short", "long"]:
             for path in paths:
                 k_shot = re.search(r'(\d+)shot', path).group(1)
                 num_labels = re.search(r'with-(\d+)-', path).group(1)
                 label_type = re.search(r'long|short|simple', path).group()
-                if label_type != s:
+                if label_type != s or num_labels in ["20", "40"]:
                     continue
                 with open(path, "r") as f:
                     run = json.load(f)

@@ -6,14 +6,15 @@ from pathlib import Path
 import pytorch_lightning as pl
 from transformers import AutoTokenizer, DataCollatorForTokenClassification, TrainingArguments, Trainer
 
-from zelda_experiment.model import HfDualEncoder
+from zelda_experiment.models import BiEncoder, LEAR
 from local_datasets import get_masked_fewnerd_corpus
 
 
 def pretrain_hf(args):
     pl.seed_everything(123)
+    model_name = "bert-base-uncased"
 
-    save_base_path = Path(f"{args.gluster_path}/{args.save_dir}")
+    save_base_path = Path(f"{args.gluster_path}/pretrained_lear_")
 
     for seed in [10, 20, 30, 50]:
         dataset = get_masked_fewnerd_corpus(seed)
@@ -24,8 +25,8 @@ def pretrain_hf(args):
         random_numbers = random.sample(range(0, len(dataset["train"]) + 1), num_samples)
         small_dataset = dataset["train"].select(random_numbers)
 
-        encoder_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-        decoder_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        encoder_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        decoder_tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         def align_labels_with_tokens(labels, word_ids):
             new_labels = []
@@ -87,15 +88,25 @@ def pretrain_hf(args):
         with open(args.label_file, 'r') as f:
             labels = json.load(f)
 
-        model = HfDualEncoder(
-            labels=labels,
-            encoder_model=args.encoder_transformer,
-            decoder_model=args.decoder_transformer,
-            tokenizer=decoder_tokenizer,
-            mask_size=0,
-            uniform_p=[0.5, 0.5],
-            geometric_p=0.5
-        )
+        if args.model == "biencoder":
+            model = BiEncoder(
+                labels=labels,
+                encoder_model=model_name,
+                decoder_model=model_name,
+                tokenizer=decoder_tokenizer,
+                zelda_mask_size=0,
+                uniform_p=[0.5, 0.5],
+                geometric_p=0.5,
+            )
+        elif args.model == "LEAR":
+            model = LEAR(
+                labels=labels,
+                encoder_model=model_name,
+                decoder_model=model_name,
+                tokenizer=decoder_tokenizer,
+                zelda_mask_size=0,
+            )
+
 
         trainer = Trainer(
             model=model,
@@ -116,16 +127,11 @@ def pretrain_hf(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # General arguments
-    parser.add_argument("--task_name", type=str)
-    parser.add_argument("--save_path", type=str)
-    parser.add_argument("--gluster_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models")
+    parser.add_argument("--gluster_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission")
     # NER4ALL needs to be loaded from disk
-    parser.add_argument("--dataset_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/jsonl")
-    parser.add_argument("--label_path", type=str, default='/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/zelda_labelID2label.json')
-    parser.add_argument("--corpus_size", type=str, default="100k")
-    parser.add_argument("--encoder_transformer", type=str, default="bert-base-uncased")
-    parser.add_argument("--decoder_transformer", type=str, default="bert-base-uncased")
-
+    parser.add_argument("--dataset_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/ner4all/loner/jsonl")
+    parser.add_argument("--label_path", type=str, default='/glusterfs/dfs-gfs-dist/goldejon/ner4all/loner/zelda_labelID2label.json')
+    parser.add_argument("--num_samples", type=str, default="small")
     parser.add_argument("--batch_size", type=int, default=8)
     args = parser.parse_args()
 
