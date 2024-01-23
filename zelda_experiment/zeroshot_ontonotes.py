@@ -27,8 +27,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-pretained_models_folder = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/*"
-finetuning_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
+pretained_models_folder = "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/*"
+finetuning_path = "/vol/tmp/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
 
 def process_ontonotes(dataset):
 
@@ -91,13 +91,13 @@ def zeroshot_evaluation():
     full_onto_zh = process_ontonotes(load_dataset("conll2012_ontonotesv5", "chinese_v4"))
 
     # --- Load pretraining indices ---
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/ontonotes_english_v4_indices_5050.json", "r") as f:
+    with open("/vol/tmp/goldejon/ner4all/tag_set_extension/ontonotes_english_v4_indices_5050.json", "r") as f:
         eng_indices = json.load(f)
 
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/ontonotes_arabic_v4_indices_5050.json", "r") as f:
+    with open("/vol/tmp/goldejon/ner4all/tag_set_extension/ontonotes_arabic_v4_indices_5050.json", "r") as f:
         arab_indices = json.load(f)
 
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/ontonotes_chinese_v4_indices_5050.json", "r") as f:
+    with open("/vol/tmp/goldejon/ner4all/tag_set_extension/ontonotes_chinese_v4_indices_5050.json", "r") as f:
         zh_indices = json.load(f)
 
     pretrained_models = glob.glob(pretained_models_folder)

@@ -344,7 +344,7 @@ def pretrain_fixed_targets(args):
     finetuning_labels = ['other-medical', 'product-game', 'location-park', 'product-ship', 'building-sportsfacility', 'other-educationaldegree', 'building-airport', 'building-hospital', 'product-train', 'building-library', 'building-hotel', 'building-restaurant', 'event-disaster', 'event-election', 'event-protest', 'art-painting']
     possible_pretraining_labels = set(semantic_label_name_map["few-nerd"]["fine_ner_tags"].keys()) - set(finetuning_labels) - set("O")
 
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/pretraining_indices_fewnerd.json", "r") as f:
+    with open("/vol/tmp/goldejon/ner4all/loss_function_experiments/pretraining_indices_fewnerd.json", "r") as f:
         pretraining_indices = json.load(f)
 
     for num_labels in [50]:
@@ -457,7 +457,7 @@ def pretrain(args) -> Dict[str, str]:
     pretraining_logger.info(f"Saving pretraining models to {save_base_path}")
 
     if args.pretraining_corpus == "ner4all":
-        dataset = load_dataset("json", data_files=glob.glob('/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/jsonl/*'))
+        dataset = load_dataset("json", data_files=glob.glob('/vol/tmp/goldejon/datasets/loner/jsonl/*'))
     elif args.pretraining_corpus == "few-nerd":
         dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
     else:
@@ -529,7 +529,7 @@ def pretrain(args) -> Dict[str, str]:
     pretraining_logger.info(training_args.to_json_string())
 
     if args.pretraining_corpus == "ner4all":
-        with open('/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/labelID2label.json', 'r') as f:
+        with open('/vol/tmp/goldejon/datasets/loner/labelID2label.json', 'r') as f:
             labels = json.load(f)
     else:
         labels = dataset["train"].features["ner_tags"].feature.names
@@ -825,7 +825,7 @@ if __name__ == "__main__":
     # General arguments
     parser.add_argument("--pretraining_fixed_targets", action="store_true")
     parser.add_argument("--save_dir", type=str, default="cross_entropy_biencoder")
-    parser.add_argument("--gluster_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments")
+    parser.add_argument("--gluster_path", type=str, default="/vol/tmp/goldejon/ner4all/loss_function_experiments")
     # NER4ALL needs to be loaded from disk
     parser.add_argument("--pretraining_corpus", type=str, default="ner4all")
     parser.add_argument("--finetuning_corpus", type=str, default="fewnerd")

@@ -127,10 +127,10 @@ def pretrain_hf(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # General arguments
-    parser.add_argument("--gluster_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission")
+    parser.add_argument("--gluster_path", type=str, default="/vol/tmp/goldejon/ner4all/acl_submission")
     # NER4ALL needs to be loaded from disk
-    parser.add_argument("--dataset_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/ner4all/loner/jsonl")
-    parser.add_argument("--label_path", type=str, default='/glusterfs/dfs-gfs-dist/goldejon/ner4all/loner/zelda_labelID2label.json')
+    parser.add_argument("--dataset_path", type=str, default="/vol/tmp/goldejon/ner4all/loner/jsonl")
+    parser.add_argument("--label_path", type=str, default='/vol/tmp/goldejon/ner4all/loner/zelda_labelID2label.json')
     parser.add_argument("--num_samples", type=str, default="small")
     parser.add_argument("--batch_size", type=int, default=8)
     args = parser.parse_args()

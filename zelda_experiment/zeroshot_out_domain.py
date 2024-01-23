@@ -28,17 +28,17 @@ logging.basicConfig(
 )
 
 pretained_models_folder = [
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/fewnerd-bert-fine_ner_tags-seed-0",
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/fewnerd-bert-fine_ner_tags-seed-1",
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/fewnerd-bert-fine_ner_tags-seed-2",
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-full_desc-and-0-negatives-excluded-fine_ner_tags-seed-0",
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-full_desc-and-0-negatives-excluded-fine_ner_tags-seed-1",
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-full_desc-and-0-negatives-excluded-fine_ner_tags-seed-2",
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-sampled_desc-and-0-negatives-excluded-fine_ner_tags-seed-0",
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-sampled_desc-and-0-negatives-excluded-fine_ner_tags-seed-1",
-    "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-sampled_desc-and-0-negatives-excluded-fine_ner_tags-seed-2",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/fewnerd-bert-fine_ner_tags-seed-0",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/fewnerd-bert-fine_ner_tags-seed-1",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/fewnerd-bert-fine_ner_tags-seed-2",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-full_desc-and-0-negatives-excluded-fine_ner_tags-seed-0",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-full_desc-and-0-negatives-excluded-fine_ner_tags-seed-1",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-full_desc-and-0-negatives-excluded-fine_ner_tags-seed-2",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-sampled_desc-and-0-negatives-excluded-fine_ner_tags-seed-0",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-sampled_desc-and-0-negatives-excluded-fine_ner_tags-seed-1",
+    "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/zelda-bert-small-dataset-with-sampled_desc-and-0-negatives-excluded-fine_ner_tags-seed-2",
 ]
-finetuning_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
+finetuning_path = "/vol/tmp/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
 
 def count_entity_mentions(tags):
     return [tags[i] for i in range(len(tags)) if

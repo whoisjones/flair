@@ -37,7 +37,7 @@ def plot_overview():
     plt.tight_layout()
     plt.show()
 
-paths = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation/*/results*")
+paths = glob.glob("/vol/tmp/goldejon/ner4all/tag_set_extension/fewshot_evaluation/*/results*")
 def run():
     scores = {}
 

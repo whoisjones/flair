@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(task)
-gluster_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/validation-experiment/"
+gluster_path = "/vol/tmp/goldejon/ner4all/acl_submission/validation-experiment/"
 pretraining_extension = "pretrained-models/{semantic_level}-{num_labels}-labels-seed-{seed}"
 
 
@@ -38,7 +38,7 @@ def pretrain_fixed_targets(args):
     torch.cuda.manual_seed_all(123)
     dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
 
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/pretraining_fewnerd_indices.json", "r") as f:
+    with open("/vol/tmp/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/pretraining_fewnerd_indices.json", "r") as f:
         pretraining_indices = json.load(f)
 
     for key, training_info in pretraining_indices.items():

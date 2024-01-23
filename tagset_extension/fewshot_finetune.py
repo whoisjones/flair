@@ -41,7 +41,7 @@ def finetune_fixed_targets(args):
 
     dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
 
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/fewshot_fewnerd_indices.json", "r") as f:
+    with open("/vol/tmp/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/fewshot_fewnerd_indices.json", "r") as f:
         fewshot_indices = json.load(f)
 
     overall_scores = {}

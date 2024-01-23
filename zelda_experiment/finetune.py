@@ -27,8 +27,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-pretained_models_folder = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/pretrained-models/"
-finetuning_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/finetuning/"
+pretained_models_folder = "/vol/tmp/goldejon/ner4all/acl_submission/pretrained-models/"
+finetuning_path = "/vol/tmp/goldejon/ner4all/acl_submission/finetuning/"
 
 
 def process_ontonotes(dataset):
@@ -102,7 +102,7 @@ def fewshot_evaluation(args):
         raise ValueError(f"Unknown dataset {args.fewshot_dataset}")
 
     # --- Load pretraining indices ---
-    with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/{indices_str}_indices_5050.json", "r") as f:
+    with open(f"/vol/tmp/goldejon/ner4all/tag_set_extension/{indices_str}_indices_5050.json", "r") as f:
         pretraining_indices = json.load(f)
 
     # --- Iterate over pretraining configs  ---

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from prettytable import PrettyTable
 
-paths = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/ce/finetuning/*/result*")
+paths = glob.glob("/vol/tmp/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/ce/finetuning/*/result*")
 
 def print_table():
     for s in ["simple", "short", "long"]:
@@ -46,7 +46,7 @@ def print_table():
 
 def to_dataframe():
     paths = glob.glob(
-        "/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/ce/finetuning/*/result*")
+        "/vol/tmp/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/ce/finetuning/*/result*")
     scores = {}
     for s in ["simple", "short", "long"]:
         for path in paths:
@@ -80,8 +80,8 @@ def to_dataframe():
 
 def plot_motivation_graph():
     def to_dataframe():
-        #paths = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/ce/finetuning/*/result*")
-        paths = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/validation-experiment/finetuning/*/result*")
+        #paths = glob.glob("/vol/tmp/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/ce/finetuning/*/result*")
+        paths = glob.glob("/vol/tmp/goldejon/ner4all/acl_submission/validation-experiment/finetuning/*/result*")
         scores = {}
         for s in ["simple", "short", "long"]:
             for path in paths:

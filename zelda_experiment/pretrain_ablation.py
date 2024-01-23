@@ -24,7 +24,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-gluster_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/{dataset}"
+gluster_path = "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/{dataset}"
 
 def count_entity_mentions(tags):
     return [tags[i] for i in range(len(tags)) if
@@ -38,12 +38,12 @@ def pretrain_fixed_targets(args):
     if args.dataset == "fewnerd":
         full_dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
     elif args.dataset == "zelda":
-        full_dataset = load_dataset("json", data_files="/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/jsonl/*")
+        full_dataset = load_dataset("json", data_files="/vol/tmp/goldejon/datasets/loner/jsonl/*")
     else:
         raise ValueError(f"Unknown dataset {args.dataset}")
 
     # --- Load pretraining indices ---
-    with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/{args.masking_dataset}_fewshots.json", "r") as f:
+    with open(f"/vol/tmp/goldejon/ner4all/tag_set_extension/{args.masking_dataset}_fewshots.json", "r") as f:
         pretraining_indices = json.load(f)
 
     # --- Iterate over pretraining configs  ---
@@ -116,7 +116,7 @@ def pretrain_fixed_targets(args):
             logger.info("QA Check passed. Number of pretraining mentions is consistent.")
 
         elif args.dataset == "zelda":
-            with open("/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/labelID2label.json", "r") as f:
+            with open("/vol/tmp/goldejon/datasets/loner/labelID2label.json", "r") as f:
                 id2label = json.load(f)
 
             if label_column == "fine_ner_tags":

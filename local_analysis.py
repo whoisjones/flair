@@ -13,7 +13,7 @@ from matplotlib import gridspec
 
 
 def extract_lear_scores():
-    path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/finetuning"
+    path = "/vol/tmp/goldejon/ner4all/acl_submission/finetuning"
     folders = glob.glob(path + "/*")
     results = {}
     for run in range(1, 10):
@@ -50,7 +50,7 @@ def extract_lear_scores():
 
 
 def extract_sparse_latent_typing_validation():
-    path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/acl_submission/validation-experiment/finetuning"
+    path = "/vol/tmp/goldejon/ner4all/acl_submission/validation-experiment/finetuning"
     folders = glob.glob(path + "/*")
     results = {}
     for run in range(1, 10):
@@ -84,7 +84,7 @@ def extract_sparse_latent_typing_validation():
     return results
 
 def extract_sparse_latent_typing_scores():
-    path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation"
+    path = "/vol/tmp/goldejon/ner4all/tag_set_extension/fewshot_evaluation"
     folders = glob.glob(path + "/*")
     folders = sorted([x for x in folders if "sparselatenttyping" in x])
     results = {}
@@ -198,11 +198,11 @@ def print_results():
     # target_keys = ["person", "location", "corporation", "creative work", "group", "product"]
 
     paths = {
-        "LPFT (1e-2, exact)": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-2_early-stopping_exact-matching",
-        "LPFT (1e-2, compose)": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-2_early-stopping_compose-matching",
-        "Linear (exact)": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/baseline_conll_03_exact-matching",
-        "Linear (compose)": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/baseline_conll_03_compose-matching",
-        "Dual Encoder (GloVe)": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/fewshot-dual-encoder/bert-base-uncased_conll_03_1e-05_123_pretrained-on-ontonotes",
+        "LPFT (1e-2, exact)": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-2_early-stopping_exact-matching",
+        "LPFT (1e-2, compose)": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-2_early-stopping_compose-matching",
+        "Linear (exact)": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/baseline_conll_03_exact-matching",
+        "Linear (compose)": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/baseline_conll_03_compose-matching",
+        "Dual Encoder (GloVe)": "/vol/tmp/goldejon/flair-models/fewshot-dual-encoder/bert-base-uncased_conll_03_1e-05_123_pretrained-on-ontonotes",
     }
 
     def sort_dict(d):
@@ -276,15 +276,15 @@ def to_csv(save_path: str, save_path_per_class: str):
     target_keys = ["person", "location", "organization", "miscellaneous"]
 
     paths = {
-        "5e-1": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-5e-1_early-stopping_compose-matching",
-        "1e-1": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-1_early-stopping_compose-matching",
-        "5e-2": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-5e-2_early-stopping_compose-matching",
-        "1e-2": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-2_early-stopping_compose-matching",
-        "1e-3": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-3_early-stopping_compose-matching",
-        "1e-4": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-4_early-stopping_compose-matching",
-        "1e-5": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-5_early-stopping_compose-matching",
-        "Linear Baseline (compose)": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/reuse-weights-flert/baseline_conll_03_compose-matching",
-        "Dual Encoder": "/glusterfs/dfs-gfs-dist/goldejon/flair-models/fewshot-dual-encoder/bert-base-uncased_conll_03_1e-05_123_pretrained-on-ontonotes",
+        "5e-1": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-5e-1_early-stopping_compose-matching",
+        "1e-1": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-1_early-stopping_compose-matching",
+        "5e-2": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-5e-2_early-stopping_compose-matching",
+        "1e-2": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-2_early-stopping_compose-matching",
+        "1e-3": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-3_early-stopping_compose-matching",
+        "1e-4": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-4_early-stopping_compose-matching",
+        "1e-5": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/LPFT/bert-base-uncased_conll_03_1e-05_123_onto-LPFT-1e-5_early-stopping_compose-matching",
+        "Linear Baseline (compose)": "/vol/tmp/goldejon/flair-models/reuse-weights-flert/baseline_conll_03_compose-matching",
+        "Dual Encoder": "/vol/tmp/goldejon/flair-models/fewshot-dual-encoder/bert-base-uncased_conll_03_1e-05_123_pretrained-on-ontonotes",
     }
 
     def sort_dict(d):
@@ -435,13 +435,13 @@ def extended_experiments():
     pretraining_seeds = [10, 20, 30, 40, 50]
 
     pretrained_dual_encoder_path = Path(
-        "/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder/masked-models"
+        "/vol/tmp/goldejon/flair-models/pretrained-dual-encoder/masked-models"
     )
     low_resource_dual_encoder_path = Path(
-        "/glusterfs/dfs-gfs-dist/goldejon/flair-models/lowresource-dual-encoder/masked-models"
+        "/vol/tmp/goldejon/flair-models/lowresource-dual-encoder/masked-models"
     )
-    low_resource_flert_path = Path("/glusterfs/dfs-gfs-dist/goldejon/flair-models/lowresource-flert/masked-models")
-    fewshot_dual_encoder_path = Path("/glusterfs/dfs-gfs-dist/goldejon/flair-models/fewshot-dual-encoder/masked-models")
+    low_resource_flert_path = Path("/vol/tmp/goldejon/flair-models/lowresource-flert/masked-models")
+    fewshot_dual_encoder_path = Path("/vol/tmp/goldejon/flair-models/fewshot-dual-encoder/masked-models")
 
     full_finetuning_scores = {}
     for granularity in granularities:
@@ -585,7 +585,7 @@ def loner_hyperparameters():
     for mask_size in ["128", "256"]:
         for lr in ["1e-05", "5e-05", "1e-06", "5e-06"]:
 
-            prefix_path = "/glusterfs/dfs-gfs-dist/goldejon/flair-models/fewshot-dual-encoder/masked-models"
+            prefix_path = "/vol/tmp/goldejon/flair-models/fewshot-dual-encoder/masked-models"
             base_path = f"{prefix_path}/bert-base-uncased_fewnerd-coarse_pretrained-on-LONER_lr-{lr}_seed-123_mask-{mask_size}_size-100k_1e-05_early-stopping/*"
             results_dirs = glob.glob(base_path)
             results = {}
@@ -787,8 +787,8 @@ def main_experiments_low_resource(base_path, add_graph: bool = False):
 
 def main_experiments_tagset_extension(add_graph: bool = False):
     from prettytable import PrettyTable
-    ours = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/flair-models/fewshot-dual-encoder/fewnerd*")
-    baselines = glob.glob("/glusterfs/dfs-gfs-dist/goldejon/flair-models/fewshot-dual-encoder/baseline/*")
+    ours = glob.glob("/vol/tmp/goldejon/flair-models/fewshot-dual-encoder/fewnerd*")
+    baselines = glob.glob("/vol/tmp/goldejon/flair-models/fewshot-dual-encoder/baseline/*")
     filtered_baselines = [x for x in baselines if "coarse-without-misc" not in x and not "40" in x and "_fewnerd-coarse-fine-masked" not in x]
     order = ["0", "1", "2", "4", "8", "16"]
     all_results = {}
@@ -1072,4 +1072,4 @@ def main_experiments_in_domain(base_path, add_graph: bool = False):
         plt.show()
 
 if __name__ == "__main__":
-    main_experiments_low_resource(base_path="/glusterfs/dfs-gfs-dist/goldejon/ner4all/emnlp_submission/low-resource-dual-encoder-main-experiment", add_graph=True)
+    main_experiments_low_resource(base_path="/vol/tmp/goldejon/ner4all/emnlp_submission/low-resource-dual-encoder-main-experiment", add_graph=True)

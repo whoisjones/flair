@@ -26,8 +26,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-pretained_models_folder = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/*"
-finetuning_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
+pretained_models_folder = "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/*"
+finetuning_path = "/vol/tmp/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
 
 def count_entity_mentions(tags):
     return [tags[i] for i in range(len(tags)) if
@@ -41,7 +41,7 @@ def zeroshot_evaluation():
     full_dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
 
     # --- Load pretraining indices ---
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewnerd_indices_5050.json", "r") as f:
+    with open("/vol/tmp/goldejon/ner4all/tag_set_extension/fewnerd_indices_5050.json", "r") as f:
         pretraining_indices = json.load(f)
 
     pretrained_models = glob.glob(pretained_models_folder)

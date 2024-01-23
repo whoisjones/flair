@@ -27,8 +27,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-pretained_models_folder = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/pretrained-models/"
-finetuning_path = "/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
+pretained_models_folder = "/vol/tmp/goldejon/ner4all/tag_set_extension/pretrained-models/"
+finetuning_path = "/vol/tmp/goldejon/ner4all/tag_set_extension/fewshot_evaluation/"
 
 def count_entity_mentions(tags):
     return [tags[i] for i in range(len(tags)) if
@@ -41,7 +41,7 @@ def fewshot_evaluation(args):
     full_dataset = load_dataset("DFKI-SLT/few-nerd", "supervised")
 
     # --- Load pretraining indices ---
-    with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewnerd_indices_5050.json", "r") as f:
+    with open(f"/vol/tmp/goldejon/ner4all/tag_set_extension/fewnerd_indices_5050.json", "r") as f:
         pretraining_indices = json.load(f)
 
     # --- Iterate over pretraining configs  ---
@@ -51,7 +51,7 @@ def fewshot_evaluation(args):
 
         num_epochs = 200
 
-        pretrained_model_path = "/glusterfs/dfs-gfs-dist/goldejon/embeddings/sparselatenttyping"
+        pretrained_model_path = "/vol/tmp/goldejon/embeddings/sparselatenttyping"
         pretraining_seed = int(pretraining_seed)
 
         for fewshot_seed, fewshot_indices in indices["fewshot_indices"].items():

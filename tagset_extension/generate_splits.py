@@ -58,7 +58,7 @@ def compute_fewnerd_fixed_targets_samples():
             }
 
     print("Saving pre-training file.")
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/pretraining_fewnerd_indices.json", "w") as f:
+    with open("/vol/tmp/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/pretraining_fewnerd_indices.json", "w") as f:
         json.dump(pretraining_indices, f)
     print("Done.")
 
@@ -92,7 +92,7 @@ def compute_fewnerd_fixed_targets_samples():
             }
 
     print("Saving fewshot file.")
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/fewshot_fewnerd_indices.json", "w") as f:
+    with open("/vol/tmp/goldejon/ner4all/loss_function_experiments/fewnerd_fixed_targets/fewshot_fewnerd_indices.json", "w") as f:
         json.dump(fewshot_indices, f)
     print("Done.")
 
@@ -149,7 +149,7 @@ def compute_indices_tag_set_extension():
             }
 
     print("Saving pre-training file.")
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/fewnerd_indices.json", "w") as f:
+    with open("/vol/tmp/goldejon/ner4all/tag_set_extension/fewnerd_indices.json", "w") as f:
         json.dump(pretraining_indices, f)
 
     print("Done.")
@@ -213,7 +213,7 @@ def compute_halves_tag_set_extension():
                 }
 
     print("Saving pre-training file.")
-    with open("/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/new_fewnerd_indices_5050.json", "w") as f:
+    with open("/vol/tmp/goldejon/ner4all/tag_set_extension/new_fewnerd_indices_5050.json", "w") as f:
         json.dump(pretraining_indices, f)
 
     print("Done.")
@@ -325,7 +325,7 @@ def compute_ontonotes_indices():
                 }
 
         print("Saving pre-training file.")
-        with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/ontonotes_{language}_indices_5050.json", "w") as f:
+        with open(f"/vol/tmp/goldejon/ner4all/tag_set_extension/ontonotes_{language}_indices_5050.json", "w") as f:
             json.dump(pretraining_indices, f)
 
     print("Done.")
@@ -446,7 +446,7 @@ def compute_full_mask_for_dataset():
             }
 
         print("Saving pre-training file.")
-        with open(f"/glusterfs/dfs-gfs-dist/goldejon/ner4all/tag_set_extension/{dataset_name}_fewshots.json", "w") as f:
+        with open(f"/vol/tmp/goldejon/ner4all/tag_set_extension/{dataset_name}_fewshots.json", "w") as f:
             json.dump(pretraining_indices, f)
 
     print("Done.")

@@ -342,12 +342,12 @@ if __name__ == "__main__":
     parser.add_argument("--cuda_device", type=int, default=0)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--pretraining_seeds", type=int, nargs="+", default=[10])
-    parser.add_argument("--cache_path", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models")
+    parser.add_argument("--cache_path", type=str, default="/vol/tmp/goldejon/flair-models")
     # All datasets from flair or hugginface
     parser.add_argument("--dataset", type=str, default="") # fewnerd
     parser.add_argument("--fewnerd_granularity", type=str, default="") # coarse
     # LONER needs to be loaded from disk
-    parser.add_argument("--dataset_path", type=str, default="") # "/glusterfs/dfs-gfs-dist/goldejon/datasets/loner/zelda_jsonl_bio"
+    parser.add_argument("--dataset_path", type=str, default="") # "/vol/tmp/goldejon/datasets/loner/zelda_jsonl_bio"
     parser.add_argument("--corpus_size", type=str, default="100k")
     parser.add_argument("--encoder_transformer", type=str, default="bert-base-uncased")
     parser.add_argument("--decoder_transformer", type=str, default="bert-base-uncased")
@@ -362,9 +362,9 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--k", type=int, nargs="+", default=[1])
     parser.add_argument("--model_to_use", type=str, default="flair")
-    parser.add_argument("--pretrained_flair_model", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder/bert-base-uncased_LONER_lr-1e-05_seed-123_mask-128_size-100k/model_epoch_3.pt")
-    parser.add_argument("--pretrained_hf_encoder", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder-hf/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-500k/encoder")
-    parser.add_argument("--pretrained_hf_decoder", type=str, default="/glusterfs/dfs-gfs-dist/goldejon/flair-models/pretrained-dual-encoder-hf/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-500k/decoder")
+    parser.add_argument("--pretrained_flair_model", type=str, default="/vol/tmp/goldejon/flair-models/pretrained-dual-encoder/bert-base-uncased_LONER_lr-1e-05_seed-123_mask-128_size-100k/model_epoch_3.pt")
+    parser.add_argument("--pretrained_hf_encoder", type=str, default="/vol/tmp/goldejon/flair-models/pretrained-dual-encoder-hf/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-500k/encoder")
+    parser.add_argument("--pretrained_hf_decoder", type=str, default="/vol/tmp/goldejon/flair-models/pretrained-dual-encoder-hf/bert-base-uncased_LONER_lr-1e-06_seed-123_mask-128_size-500k/decoder")
     args = parser.parse_args()
 
     if not any([args.dataset, args.dataset_path]):
